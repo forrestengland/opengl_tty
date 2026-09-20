@@ -391,18 +391,37 @@ int load_obj(const char *filename) {
 
 const char *vertexShaderSource =
     "attribute vec3 position;\n"
+    "attribute vec3 normal;\n"
     "uniform mat4 modelMatrix;\n"
     "uniform mat4 projectionMatrix;\n"
+    "varying vec3 vertexNormal;\n"
     "\n"
     "void main() {\n"
     "    gl_Position = projectionMatrix * modelMatrix * vec4(position, 1.0);\n"
+    "    vertexNormal = normal;\n"
     "}\n";
 
 const char *fragmentShaderSource =
     "precision mediump float;\n"
+    "varying vec3 vertexNormal;\n"
+    "\n"
     "void main()\n"
     "{\n"
-    "    gl_FragColor = vec4(0.1, 0.8, 0.4, 1.0);\n"
+    "    vec3 lightDirection = normalize(vec3(1.0, 1.0, 1.0));\n"
+    "\n"
+    "    float brightness = max(\n"
+    "        dot(normalize(vertexNormal), lightDirection),\n"
+    "        0.0\n"
+    "    );\n"
+    "\n"
+    "    float ambient = 0.2;\n"
+    "\n"
+    "    vec3 color = vec3(0.1, 0.8, 0.4);\n"
+    "\n"
+    "    gl_FragColor = vec4(\n"
+    "        color * (ambient + brightness),\n"
+    "        1.0\n"
+    "    );\n"
     "}\n";
 
 GLuint compileShader(GLenum type, const char *source)
@@ -464,6 +483,8 @@ GLuint createProgram(void)
         "position"
     );
 
+    glBindAttribLocation(program, 1, "normal");
+
     glLinkProgram(program);
 
     GLint success;
@@ -518,6 +539,15 @@ void draw_model(Mat4 *model, Mat4 *projection)
 
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
 
+    /*
+     * Each vertex is:
+     *
+     *     x y z nx ny nz
+     *
+     * 6 floats total.
+     */
+
+    // Position
     glEnableVertexAttribArray(0);
 
     glVertexAttribPointer(
@@ -525,15 +555,31 @@ void draw_model(Mat4 *model, Mat4 *projection)
         3,
         GL_FLOAT,
         GL_FALSE,
-        0,
-        0
+        6 * sizeof(float),
+        (void *)0
     );
 
-    glDrawArrays(GL_TRIANGLES, 0, draw_vertex_count);
+    // Normal
+    glEnableVertexAttribArray(1);
+
+    glVertexAttribPointer(
+        1,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        6 * sizeof(float),
+        (void *)(3 * sizeof(float))
+    );
+
+    glDrawArrays(
+        GL_TRIANGLES,
+        0,
+        draw_vertex_count
+    );
 
     glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
 }
-
 
 // Main
 int main(int argc, char* argv[]) {
@@ -648,7 +694,7 @@ int main(int argc, char* argv[]) {
   draw_vertex_count = face_count * 3;
 
   float *model_vertices =
-    malloc(draw_vertex_count * 3 * sizeof(float));
+    malloc(draw_vertex_count * 6 * sizeof(float));
 
   if (!model_vertices) {
     fprintf(stderr, "Failed to allocate model vertices\n");
@@ -656,24 +702,37 @@ int main(int argc, char* argv[]) {
   }
 
   float scale = 0.2f;
+
   int index = 0;
+
   for (int i = 0; i < face_count; i++) {
 
     Face *face = &faces[i];
+
     for (int j = 0; j < 3; j++) {
 
       Vec3 *v = &vertices[face->v[j]];
+      Vec3 *n = &normals[face->n[j]];
+
+      // position
       model_vertices[index++] = v->x * scale;
       model_vertices[index++] = v->y * scale;
       model_vertices[index++] = v->z * scale;
+
+      // normal
+      model_vertices[index++] = n->x;
+      model_vertices[index++] = n->y;
+      model_vertices[index++] = n->z;
     }
-  }
+  }  
 
   glGenBuffers(1, &vertexBuffer);
+
   glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+
   glBufferData(
 	       GL_ARRAY_BUFFER,
-	       draw_vertex_count * 3 * sizeof(float),
+	       draw_vertex_count * 6 * sizeof(float),
 	       model_vertices,
 	       GL_STATIC_DRAW
 	       );
