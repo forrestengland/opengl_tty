@@ -447,7 +447,7 @@ void draw_model() {
 
     glVertexAttribPointer(
         0,              // attribute number
-        2,              // x,y
+        3,              // x,y,z
         GL_FLOAT,
         GL_FALSE,
         0,
@@ -556,9 +556,9 @@ int main(int argc, char* argv[]) {
 
   // test triangle
   float triangle[] = {
-     0.0f,  0.5f,
-    -0.5f, -0.5f,
-     0.5f, -0.5f
+    0.0f,  0.5f, 0.0f,
+    -0.5f, -0.5f, 0.0f,
+    0.5f, -0.5f, 0.0f
   };
 
   glGenBuffers(1, &vertexBuffer);
