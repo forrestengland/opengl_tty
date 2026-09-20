@@ -7,7 +7,6 @@
 #include <time.h>
 #include <math.h>
 #include <string.h>
-#include <assert.h>
 
 #define WINDOW_WIDTH  640
 #define WINDOW_HEIGHT 480
@@ -16,9 +15,15 @@
 
 #define PI 3.1415926535
 
-//GLint angleUniform;
+GLuint program;
+GLuint vertexBuffer;
+GLint positionAttribute;
+
 GLint matrixUniform;
 GLint projectionUniform;
+
+// number of vertices to send to glDrawArrays()
+int draw_vertex_count = 0;
 
 // Basic 3D types
 typedef struct {
@@ -384,10 +389,6 @@ int load_obj(const char *filename) {
     return 1;
 }
 
-GLuint program;
-GLuint vertexBuffer;
-GLint positionAttribute;
-
 const char *vertexShaderSource =
     "attribute vec3 position;\n"
     "uniform mat4 modelMatrix;\n"
@@ -528,7 +529,7 @@ void draw_model(Mat4 *model, Mat4 *projection)
         0
     );
 
-    glDrawArrays(GL_TRIANGLES, 0, 3);
+    glDrawArrays(GL_TRIANGLES, 0, draw_vertex_count);
 
     glDisableVertexAttribArray(0);
 }
@@ -571,10 +572,7 @@ int main(int argc, char* argv[]) {
 		      1
 		      );
 
-  SDL_GL_SetAttribute(
-		      SDL_GL_DEPTH_SIZE,
-		      16
-		      );
+  SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
   SDL_Window *window = SDL_CreateWindow(
 					"SDL2 OpenGL ES",
@@ -611,6 +609,14 @@ int main(int argc, char* argv[]) {
   printf("GL version: %s\n",
 	 glGetString(GL_VERSION));
 
+  // enable depth testing
+  glEnable(GL_DEPTH_TEST);
+  glDepthFunc(GL_LESS);
+  glClearDepthf(1.0f);
+  int depthBits;
+  SDL_GL_GetAttribute(SDL_GL_DEPTH_SIZE, &depthBits);
+  printf("Depth buffer: %d bits\n", depthBits);
+
   // create the gpu program
   program = createProgram();
 
@@ -638,40 +644,41 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // draw 1 triangle from .obj data
-  int facei = 0;
-  assert(face_count > facei);
-  float triangle[] = {
-    vertices[faces[facei].v[0]].x, vertices[faces[facei].v[0]].y, vertices[faces[facei].v[0]].z,
-    vertices[faces[facei].v[1]].x, vertices[faces[facei].v[1]].y, vertices[faces[facei].v[1]].z,
-    vertices[faces[facei].v[2]].x, vertices[faces[facei].v[2]].y, vertices[faces[facei].v[2]].z    
-  };
+  // send obj faces to gpu
+  draw_vertex_count = face_count * 3;
 
-  printf(
-    "triangle:\n"
-    "  %f %f %f\n"
-    "  %f %f %f\n"
-    "  %f %f %f\n",
-    triangle[0], triangle[1], triangle[2],
-    triangle[3], triangle[4], triangle[5],
-    triangle[6], triangle[7], triangle[8]
-	 );
+  float *model_vertices =
+    malloc(draw_vertex_count * 3 * sizeof(float));
+
+  if (!model_vertices) {
+    fprintf(stderr, "Failed to allocate model vertices\n");
+    return 1;
+  }
 
   float scale = 0.2f;
+  int index = 0;
+  for (int i = 0; i < face_count; i++) {
 
-  for (int i = 0; i < 9; i++) {
-    triangle[i] *= scale;
-  }  
+    Face *face = &faces[i];
+    for (int j = 0; j < 3; j++) {
+
+      Vec3 *v = &vertices[face->v[j]];
+      model_vertices[index++] = v->x * scale;
+      model_vertices[index++] = v->y * scale;
+      model_vertices[index++] = v->z * scale;
+    }
+  }
 
   glGenBuffers(1, &vertexBuffer);
+  glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+  glBufferData(
+	       GL_ARRAY_BUFFER,
+	       draw_vertex_count * 3 * sizeof(float),
+	       model_vertices,
+	       GL_STATIC_DRAW
+	       );
 
-  glBindBuffer(GL_ARRAY_BUFFER,
-	       vertexBuffer);
-
-  glBufferData(GL_ARRAY_BUFFER,
-	       sizeof(triangle),
-	       triangle,
-	       GL_STATIC_DRAW);
+  free(model_vertices);
 
   Mat4 projection = mat4_perspective(60.0f * PI / 180.0f,
 				     (float)WINDOW_WIDTH / WINDOW_HEIGHT,
@@ -723,12 +730,8 @@ int main(int argc, char* argv[]) {
     
     // Clear frame
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
-    // ModelView transformation
-
-    // Move model away from camera.
-
     // Model color.
 
     // Draw OBJ
