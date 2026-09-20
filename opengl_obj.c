@@ -7,11 +7,16 @@
 #include <time.h>
 #include <math.h>
 #include <string.h>
+#include <assert.h>
 
 #define WINDOW_WIDTH  640
 #define WINDOW_HEIGHT 480
 
 #define ROTATION_SPEED 10.0
+
+#define PI 3.1415926535
+
+GLint angleUniform;
 
 // Basic 3D types
 typedef struct {
@@ -20,12 +25,10 @@ typedef struct {
     float z;
 } Vec3;
 
-
 typedef struct {
     int v[3];   /* vertex indices */
     int n[3];   /* normal indices */
 } Face;
-
 
 // OBJ data
 Vec3 *vertices = NULL;
@@ -39,7 +42,6 @@ int normal_capacity = 0;
 Face *faces = NULL;
 int face_count = 0;
 int face_capacity = 0;
-
 
 // Time
 double getTime() {
@@ -294,11 +296,27 @@ GLuint vertexBuffer;
 GLint positionAttribute;
 
 const char *vertexShaderSource =
-    "attribute vec3 position;\n"
-    "void main()\n"
-    "{\n"
-    "    gl_Position = vec4(position, 1.0);\n"
-    "}\n";
+  "attribute vec3 position;\n"
+  "uniform float angle;\n"
+  "void main() {\n"
+  "  float c = cos(angle);\n"
+  "  float s = sin(angle);\n"
+  // Rotate around X axis
+  "  float y = position.y * c - position.z * s;\n"
+  "  float z = position.y * s + position.z * c;\n"
+  // Move the model away from the camera
+  "  z += 3.0;\n"
+  // Perspective projection
+  "  float x = position.x / z;\n"
+  "  float projectedY = y / z;\n"
+
+  "  gl_Position = vec4(\n"
+  "      x,\n"
+  "      projectedY,\n"
+  "      0.0,\n"
+  "      1.0\n"
+  "  );\n"
+  "}\n";
 
 const char *fragmentShaderSource =
     "precision mediump float;\n"
@@ -400,7 +418,7 @@ GLuint createProgram(void)
 }
 
 // Draw OBJ model
-void draw_model() {
+void draw_model(double angle) {
   
   //    glBegin(GL_TRIANGLES);
 
@@ -437,6 +455,11 @@ void draw_model() {
     //    glEnd();
 
     glUseProgram(program);
+
+    glUniform1f(
+		angleUniform,
+		(float)(angle * PI / 180.0)
+		);
 
     glBindBuffer(
         GL_ARRAY_BUFFER,
@@ -554,12 +577,45 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  // test triangle
+  // handle to communicate with the shader program
+  angleUniform = glGetUniformLocation(
+				      program,
+				      "angle"
+				      );
+  
+  int running = 1;
+
+  // Load OBJ
+  char* filename = "shape.obj"; // default
+  if (argc > 1) filename = argv[1]; // from command line arg
+  if (!load_obj(filename)) {
+    return 1;
+  }
+
+  // draw 1 triangle from .obj data
+  int facei = 0;
+  assert(face_count > facei);
   float triangle[] = {
-    0.0f,  0.5f, 0.0f,
-    -0.5f, -0.5f, 0.0f,
-    0.5f, -0.5f, 0.0f
+    vertices[faces[facei].v[0]].x, vertices[faces[facei].v[0]].y, vertices[faces[facei].v[0]].z,
+    vertices[faces[facei].v[1]].x, vertices[faces[facei].v[1]].y, vertices[faces[facei].v[1]].z,
+    vertices[faces[facei].v[2]].x, vertices[faces[facei].v[2]].y, vertices[faces[facei].v[2]].z    
   };
+
+  printf(
+    "triangle:\n"
+    "  %f %f %f\n"
+    "  %f %f %f\n"
+    "  %f %f %f\n",
+    triangle[0], triangle[1], triangle[2],
+    triangle[3], triangle[4], triangle[5],
+    triangle[6], triangle[7], triangle[8]
+	 );
+
+  float scale = 0.2f;
+
+  for (int i = 0; i < 9; i++) {
+    triangle[i] *= scale;
+  }  
 
   glGenBuffers(1, &vertexBuffer);
 
@@ -574,16 +630,6 @@ int main(int argc, char* argv[]) {
 	       triangle,
 	       GL_STATIC_DRAW
 	       );
-
-  
-  int running = 1;
-
-  // Load OBJ
-  char* filename = "shape.obj"; // default
-  if (argc > 1) filename = argv[1]; // from command line arg
-  if (!load_obj(filename)) {
-    return 1;
-  }
 
   // Timing
   double previousTime = getTime();
@@ -634,8 +680,7 @@ int main(int argc, char* argv[]) {
     // Model color.
 
     // Draw OBJ
-    draw_model();
-
+    draw_model(angle);
 
     // Display frame
     SDL_GL_SwapWindow(window);
