@@ -8,6 +8,8 @@
 #include <math.h>
 #include <string.h>
 
+#define WIREFRAME 1
+
 #define WINDOW_WIDTH  640
 #define WINDOW_HEIGHT 480
 
@@ -316,20 +318,27 @@ int load_obj(const char *filename) {
 
 	    int vertex_index;
 	    int normal_index;
+	    int texture_index;
 
-	    if (sscanf(
-		       token,
-		       "%d//%d",
-		       &vertex_index,
-		       &normal_index
-		       ) == 2) {
+	    if (sscanf(token, "%d/%d/%d",
+           &vertex_index,
+           &texture_index,
+           &normal_index) == 3) {
 
 	      v[vertex_count] = vertex_index - 1;
 	      n[vertex_count] = normal_index - 1;
 
 	      vertex_count++;
 	    }
+	    else if (sscanf(token, "%d//%d",
+			    &vertex_index,
+			    &normal_index) == 2) {
 
+	      v[vertex_count] = vertex_index - 1;
+	      n[vertex_count] = normal_index - 1;
+
+	      vertex_count++;
+	    }
 	    token = strtok(NULL, " \t\r\n");
 	  }
 
@@ -571,11 +580,17 @@ void draw_model(Mat4 *model, Mat4 *projection)
         (void *)(3 * sizeof(float))
     );
 
-    glDrawArrays(
-        GL_TRIANGLES,
-        0,
-        draw_vertex_count
-    );
+    if (WIREFRAME) {
+      for (int i = 0; i < draw_vertex_count; i += 3) {
+	glDrawArrays(GL_LINE_LOOP, i, 3);
+      }
+    } else {
+      glDrawArrays(
+		   GL_TRIANGLES,
+		   0,
+		   draw_vertex_count
+		   );
+    }
 
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
