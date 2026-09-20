@@ -16,7 +16,8 @@
 
 #define PI 3.1415926535
 
-GLint angleUniform;
+//GLint angleUniform;
+GLint matrixUniform;
 
 // Basic 3D types
 typedef struct {
@@ -24,6 +25,11 @@ typedef struct {
     float y;
     float z;
 } Vec3;
+
+// 4x4 column major matrix
+typedef struct {
+    float m[16];
+} Mat4;
 
 typedef struct {
     int v[3];   /* vertex indices */
@@ -42,6 +48,66 @@ int normal_capacity = 0;
 Face *faces = NULL;
 int face_count = 0;
 int face_capacity = 0;
+
+// identity matrix
+Mat4 mat4_identity(void)
+{
+    Mat4 result = {{
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    }};
+
+    return result;
+}
+
+// x rotation matrix 
+Mat4 mat4_rotation_x(float angle)
+{
+    float c = cosf(angle);
+    float s = sinf(angle);
+
+    Mat4 result = {{
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f,    c,    s, 0.0f,
+        0.0f,   -s,    c, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
+    }};
+
+    return result;
+}
+
+// translation matrix
+Mat4 mat4_translation(float x, float y, float z)
+{
+    Mat4 result = mat4_identity();
+
+    result.m[12] = x;
+    result.m[13] = y;
+    result.m[14] = z;
+
+    return result;
+}
+
+// matrix multiplication
+Mat4 mat4_multiply(Mat4 a, Mat4 b)
+{
+    Mat4 result;
+
+    for (int col = 0; col < 4; col++) {
+        for (int row = 0; row < 4; row++) {
+
+            result.m[col * 4 + row] =
+                a.m[0 * 4 + row] * b.m[col * 4 + 0] +
+                a.m[1 * 4 + row] * b.m[col * 4 + 1] +
+                a.m[2 * 4 + row] * b.m[col * 4 + 2] +
+                a.m[3 * 4 + row] * b.m[col * 4 + 3];
+        }
+    }
+
+    return result;
+}
 
 // Time
 double getTime() {
@@ -296,27 +362,13 @@ GLuint vertexBuffer;
 GLint positionAttribute;
 
 const char *vertexShaderSource =
-  "attribute vec3 position;\n"
-  "uniform float angle;\n"
-  "void main() {\n"
-  "  float c = cos(angle);\n"
-  "  float s = sin(angle);\n"
-  // Rotate around X axis
-  "  float y = position.y * c - position.z * s;\n"
-  "  float z = position.y * s + position.z * c;\n"
-  // Move the model away from the camera
-  "  z += 3.0;\n"
-  // Perspective projection
-  "  float x = position.x / z;\n"
-  "  float projectedY = y / z;\n"
-
-  "  gl_Position = vec4(\n"
-  "      x,\n"
-  "      projectedY,\n"
-  "      0.0,\n"
-  "      1.0\n"
-  "  );\n"
-  "}\n";
+    "attribute vec3 position;\n"
+    "uniform mat4 modelMatrix;\n"
+    "\n"
+    "void main() {\n"
+    "    vec4 p = modelMatrix * vec4(position, 1.0);\n"
+    "    gl_Position = vec4(p.x / p.z, p.y / p.z, 0.0, 1.0);\n"
+    "}\n";
 
 const char *fragmentShaderSource =
     "precision mediump float;\n"
@@ -418,53 +470,13 @@ GLuint createProgram(void)
 }
 
 // Draw OBJ model
-void draw_model(double angle) {
+void draw_model(Mat4* model) {
   
-  //    glBegin(GL_TRIANGLES);
-
-    for (int i = 0; i < face_count; i++) {
-
-        Face f = faces[i];
-
-        for (int j = 0; j < 3; j++) {
-
-            Vec3 n = normals[f.n[j]];
-            Vec3 v = vertices[f.v[j]];
-
-            /*
-             * Tell OpenGL which normal belongs
-             * to this vertex.
-             */
-	    //        glNormal3f(
-	    //                n.x,
-	    //                n.y,
-	    //                n.z
-	    //            );
-
-            /*
-             * Then specify the vertex.
-             */
-	    //            glVertex3f(
-	    //                v.x,
-	    //                v.y,
-	    //                v.z
-	    //            );
-        }
-    }
-
-    //    glEnd();
-
     glUseProgram(program);
 
-    glUniform1f(
-		angleUniform,
-		(float)(angle * PI / 180.0)
-		);
+    glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
 
-    glBindBuffer(
-        GL_ARRAY_BUFFER,
-        vertexBuffer
-    );
+    glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
 
     glEnableVertexAttribArray(0);
 
@@ -578,10 +590,8 @@ int main(int argc, char* argv[]) {
   }
 
   // handle to communicate with the shader program
-  angleUniform = glGetUniformLocation(
-				      program,
-				      "angle"
-				      );
+  //  angleUniform = glGetUniformLocation(program, "angle");
+  matrixUniform = glGetUniformLocation(program, "modelMatrix");
   
   int running = 1;
 
@@ -662,13 +672,18 @@ int main(int argc, char* argv[]) {
       if (event.type == SDL_KEYDOWN)
 	running = 0;
     }
-    
-    // Rotation
+
+    // update Rotation
     angle += rotationSpeed * deltaTime;
     if (angle >= 360.0) {
       angle -= 360.0;
     }
 
+    // calculate matrices
+    Mat4 rotation = mat4_rotation_x((float)(angle * PI / 180.0));
+    Mat4 translation = mat4_translation(0.0f, 0.0f, 3.0f);
+    Mat4 model = mat4_multiply(translation, rotation);
+    
     // Clear frame
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -680,7 +695,7 @@ int main(int argc, char* argv[]) {
     // Model color.
 
     // Draw OBJ
-    draw_model(angle);
+    draw_model(&model);
 
     // Display frame
     SDL_GL_SwapWindow(window);
