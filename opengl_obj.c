@@ -18,6 +18,7 @@
 
 //GLint angleUniform;
 GLint matrixUniform;
+GLint projectionUniform;
 
 // Basic 3D types
 typedef struct {
@@ -105,6 +106,32 @@ Mat4 mat4_multiply(Mat4 a, Mat4 b)
                 a.m[3 * 4 + row] * b.m[col * 4 + 3];
         }
     }
+
+    return result;
+}
+
+// perspective matrix
+Mat4 mat4_perspective(
+    float fov,
+    float aspect,
+    float near,
+    float far
+) {
+    float f = 1.0f / tanf(fov / 2.0f);
+
+    Mat4 result = {{
+        f / aspect, 0.0f, 0.0f, 0.0f,
+
+        0.0f, f, 0.0f, 0.0f,
+
+        0.0f, 0.0f,
+        (far + near) / (near - far),
+        -1.0f,
+
+        0.0f, 0.0f,
+        (2.0f * far * near) / (near - far),
+        0.0f
+    }};
 
     return result;
 }
@@ -364,10 +391,10 @@ GLint positionAttribute;
 const char *vertexShaderSource =
     "attribute vec3 position;\n"
     "uniform mat4 modelMatrix;\n"
+    "uniform mat4 projectionMatrix;\n"
     "\n"
     "void main() {\n"
-    "    vec4 p = modelMatrix * vec4(position, 1.0);\n"
-    "    gl_Position = vec4(p.x / p.z, p.y / p.z, 0.0, 1.0);\n"
+    "    gl_Position = projectionMatrix * modelMatrix * vec4(position, 1.0);\n"
     "}\n";
 
 const char *fragmentShaderSource =
@@ -470,30 +497,38 @@ GLuint createProgram(void)
 }
 
 // Draw OBJ model
-void draw_model(Mat4* model) {
-  
+void draw_model(Mat4 *model, Mat4 *projection)
+{
     glUseProgram(program);
 
-    glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
+    glUniformMatrix4fv(
+        matrixUniform,
+        1,
+        GL_FALSE,
+        model->m
+    );
+
+    glUniformMatrix4fv(
+        projectionUniform,
+        1,
+        GL_FALSE,
+        projection->m
+    );
 
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
 
     glEnableVertexAttribArray(0);
 
     glVertexAttribPointer(
-        0,              // attribute number
-        3,              // x,y,z
+        0,
+        3,
         GL_FLOAT,
         GL_FALSE,
         0,
         0
     );
 
-    glDrawArrays(
-        GL_TRIANGLES,
-        0,
-        3
-    );
+    glDrawArrays(GL_TRIANGLES, 0, 3);
 
     glDisableVertexAttribArray(0);
 }
@@ -592,6 +627,7 @@ int main(int argc, char* argv[]) {
   // handle to communicate with the shader program
   //  angleUniform = glGetUniformLocation(program, "angle");
   matrixUniform = glGetUniformLocation(program, "modelMatrix");
+  projectionUniform = glGetUniformLocation(program, "projectionMatrix");  
   
   int running = 1;
 
@@ -629,17 +665,18 @@ int main(int argc, char* argv[]) {
 
   glGenBuffers(1, &vertexBuffer);
 
-  glBindBuffer(
-	       GL_ARRAY_BUFFER,
-	       vertexBuffer
-	       );
+  glBindBuffer(GL_ARRAY_BUFFER,
+	       vertexBuffer);
 
-  glBufferData(
-	       GL_ARRAY_BUFFER,
+  glBufferData(GL_ARRAY_BUFFER,
 	       sizeof(triangle),
 	       triangle,
-	       GL_STATIC_DRAW
-	       );
+	       GL_STATIC_DRAW);
+
+  Mat4 projection = mat4_perspective(60.0f * PI / 180.0f,
+				     (float)WINDOW_WIDTH / WINDOW_HEIGHT,
+				     0.1f,
+				     100.0f);
 
   // Timing
   double previousTime = getTime();
@@ -681,7 +718,7 @@ int main(int argc, char* argv[]) {
 
     // calculate matrices
     Mat4 rotation = mat4_rotation_x((float)(angle * PI / 180.0));
-    Mat4 translation = mat4_translation(0.0f, 0.0f, 3.0f);
+    Mat4 translation = mat4_translation(0.0f, 0.0f, -3.0f);
     Mat4 model = mat4_multiply(translation, rotation);
     
     // Clear frame
@@ -695,7 +732,7 @@ int main(int argc, char* argv[]) {
     // Model color.
 
     // Draw OBJ
-    draw_model(&model);
+    draw_model(&model, &projection);
 
     // Display frame
     SDL_GL_SwapWindow(window);
