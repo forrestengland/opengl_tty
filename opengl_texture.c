@@ -1,33 +1,35 @@
+// standard includes
 #include <stdio.h>
 #include <stdlib.h>
-
-#include <SDL2/SDL.h>
-#include <GLES2/gl2.h>
-
 #include <time.h>
 #include <math.h>
 #include <string.h>
-
+// sdl
+#include <SDL2/SDL.h>
+// opengl
+#include <GLES2/gl2.h>
+// stb image for loading bitmap textures
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+// texture image info
 int image_width, image_height, image_channels;
 unsigned char* image_data = 0;
 
+// requested screen size for desktop
 #define SCREEN_W 640
 #define SCREEN_H 480
+// speed player moves at
 #define PLAYER_SPEED 2.0
+// wireframe or solid display for player object
 #define WIREFRAME 0
-#define CAMERA_DISTANCE -3.0
+// player object file
 #define OBJFILE "cube.obj"
+// texture image
 #define IMAGEFILE "cube_texture.bmp"
-// #define OBJFILE "deer_tex.obj"
-// #define IMAGEFILE "deer_auv.bmp"
-
-#define WINDOW_WIDTH  640
-#define WINDOW_HEIGHT 480
-
-#define ROTATION_SPEED 5.0
+// rotation speed of player object
+#define ROTATION_SPEED_X 5.0
+#define ROTATION_SPEED_Y 15.0
 
 #define PI 3.1415926535
 
@@ -1023,7 +1025,6 @@ int main(int argc, char* argv[]) {
   }
 
   // handle to communicate with the shader program
-  //  angleUniform = glGetUniformLocation(program, "angle");
   matrixUniform = glGetUniformLocation(program, "modelMatrix");
   projectionUniform = glGetUniformLocation(program, "projectionMatrix");
   textureUniform = glGetUniformLocation(program, "textureSampler");
@@ -1194,15 +1195,10 @@ int main(int argc, char* argv[]) {
 				     100.0f
 				     );
 
-  /*  Mat4 projection = mat4_perspective(60.0f * PI / 180.0f,
-				     (float)WINDOW_WIDTH / WINDOW_HEIGHT,
-				     0.1f,
-				     100.0f); */
-
   // Timing
   double previousTime = getTime();
-  double angle = 0.0;
-  double rotationSpeed = ROTATION_SPEED;
+  double angleX = 0.0;
+  double angleY = 0.0;  
   int frameCount = 0;
   double fpsTimer = 0.0;
 
@@ -1285,18 +1281,20 @@ int main(int argc, char* argv[]) {
     Mat4 view = mat4_look_at(cameraPosition, cameraTarget, cameraUp);
 
     // update Rotation
-    angle += rotationSpeed * deltaTime;
-    if (angle >= 360.0) {
-      angle -= 360.0;
+    angleX += ROTATION_SPEED_X * deltaTime;
+    if (angleX >= 360.0) {
+      angleX -= 360.0;
+    }
+    angleY += ROTATION_SPEED_Y * deltaTime;
+    if (angleY >= 360.0) {
+      angleY -= 360.0;
     }
 
     // calculate matrices
-    Mat4 rotationX = mat4_rotation_x((float)(angle * PI / 180.0));
-    Mat4 rotationY = mat4_rotation_y((float)(angle * PI / 180.0));
+    Mat4 rotationX = mat4_rotation_x((float)(angleX * PI / 180.0));
+    Mat4 rotationY = mat4_rotation_y((float)(angleY * PI / 180.0));
     Mat4 rotation = mat4_multiply(rotationY, rotationX);
     
-    //    Mat4 translation = mat4_translation(0.0f, 0.0f, CAMERA_DISTANCE);
-    //    Mat4 translation = mat4_translation(playerX, playerY, playerZ + CAMERA_DISTANCE);
     Mat4 translation = mat4_translation(playerX, playerY, playerZ);    
     Mat4 model = mat4_multiply(translation, rotation);
 
