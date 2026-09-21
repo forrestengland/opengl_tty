@@ -14,6 +14,9 @@
 int image_width, image_height, image_channels;
 unsigned char* image_data = 0;
 
+#define SCREEN_W 640
+#define SCREEN_H 480
+
 #define WIREFRAME 0
 #define CAMERA_DISTANCE -3.0
 #define OBJFILE "cube.obj"
@@ -30,6 +33,7 @@ unsigned char* image_data = 0;
 
 GLuint program;
 GLuint vertexBuffer;
+GLuint planeVertexBuffer;
 GLuint texture;
 
 GLint positionAttribute;
@@ -590,6 +594,69 @@ GLuint createProgram(void)
     return program;
 }
 
+// draw ground
+void draw_plane(Mat4 *model, Mat4 *projection)
+{
+    glUseProgram(program);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glUniform1i(textureUniform, 0);
+
+    glUniformMatrix4fv(
+        matrixUniform,
+        1,
+        GL_FALSE,
+        model->m
+    );
+
+    glUniformMatrix4fv(
+        projectionUniform,
+        1,
+        GL_FALSE,
+        projection->m
+    );
+
+    glBindBuffer(GL_ARRAY_BUFFER, planeVertexBuffer);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(
+        0,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        8 * sizeof(float),
+        (void *)0
+    );
+
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(
+        1,
+        3,
+        GL_FLOAT,
+        GL_FALSE,
+        8 * sizeof(float),
+        (void *)(3 * sizeof(float))
+    );
+
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(
+        2,
+        2,
+        GL_FLOAT,
+        GL_FALSE,
+        8 * sizeof(float),
+        (void *)(6 * sizeof(float))
+    );
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glDisableVertexAttribArray(0);
+    glDisableVertexAttribArray(1);
+    glDisableVertexAttribArray(2);
+}
+
 // Draw OBJ model
 void draw_model(Mat4 *model, Mat4 *projection) {
   
@@ -656,36 +723,16 @@ int main(int argc, char* argv[]) {
   /*
    * Ask SDL for an OpenGL ES 2.0 context.
    */
-  SDL_GL_SetAttribute(
-		      SDL_GL_CONTEXT_PROFILE_MASK,
-		      SDL_GL_CONTEXT_PROFILE_ES
-		      );
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
+		      SDL_GL_CONTEXT_PROFILE_ES);
 
-  SDL_GL_SetAttribute(
-		      SDL_GL_CONTEXT_MAJOR_VERSION,
-		      2
-		      );
-
-  SDL_GL_SetAttribute(
-		      SDL_GL_CONTEXT_MINOR_VERSION,
-		      0
-		      );
-
-  SDL_GL_SetAttribute(
-		      SDL_GL_DOUBLEBUFFER,
-		      1
-		      );
-
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+  SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-  SDL_Window *window = SDL_CreateWindow(
-					"SDL2 OpenGL ES",
-					0,
-					0,
-					640,
-					480,
-					SDL_WINDOW_OPENGL
-					);
+  SDL_Window *window = SDL_CreateWindow("SDL2 OpenGL ES", 0, 0,	SCREEN_W, SCREEN_H,
+					SDL_WINDOW_OPENGL);
 
   if (!window) {
     fprintf(stderr,
@@ -707,11 +754,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  printf("GL renderer: %s\n",
-	 glGetString(GL_RENDERER));
-
-  printf("GL version: %s\n",
-	 glGetString(GL_VERSION));
+  printf("GL renderer: %s\n", glGetString(GL_RENDERER));
+  printf("GL version: %s\n", glGetString(GL_VERSION));
 
   // enable depth testing
   glEnable(GL_DEPTH_TEST);
@@ -757,35 +801,27 @@ int main(int argc, char* argv[]) {
   // load texture
   glGenTextures(1, &texture);
   glBindTexture(GL_TEXTURE_2D, texture);
-  glTexParameteri(
-		  GL_TEXTURE_2D,
+  glTexParameteri(GL_TEXTURE_2D,
 		  GL_TEXTURE_MIN_FILTER,
-		  GL_LINEAR
-		  );
+		  GL_LINEAR);
 
-  glTexParameteri(
-		  GL_TEXTURE_2D,
+  glTexParameteri(GL_TEXTURE_2D,
 		  GL_TEXTURE_MAG_FILTER,
-		  GL_LINEAR
-		  );
+		  GL_LINEAR);
 
-  glTexParameteri(
-		  GL_TEXTURE_2D,
+  glTexParameteri(GL_TEXTURE_2D,
 		  GL_TEXTURE_WRAP_S,
-		  GL_REPEAT
-		  );
+		  GL_REPEAT);
 
-  glTexParameteri(
-		  GL_TEXTURE_2D,
+  glTexParameteri(GL_TEXTURE_2D,
 		  GL_TEXTURE_WRAP_T,
-		  GL_REPEAT
-		  );  
+		  GL_REPEAT);
+  
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image_width, image_height, 0,
 	       GL_RGB, GL_UNSIGNED_BYTE, image_data);
 
-  // Load OBJ
+  // Load player OBJ
   char* filename = OBJFILE; // default
-  /*  if (argc > 1) filename = argv[1]; // from command line arg */
   if (!load_obj(filename)) {
     return 1;
   }
@@ -793,12 +829,7 @@ int main(int argc, char* argv[]) {
   printf("Texture coordinates: %d\n", texcoord_count);
 
   for (int i = 0; i < texcoord_count; i++) {
-    printf(
-	   "%d: u=%f v=%f\n",
-	   i,
-	   texcoords[i].u,
-	   texcoords[i].v
-	   );
+    printf("%d: u=%f v=%f\n", i, texcoords[i].u, texcoords[i].v);
   }
 
   // send obj faces to gpu
@@ -849,6 +880,26 @@ int main(int argc, char* argv[]) {
 	       model_vertices, GL_STATIC_DRAW);
 
   free(model_vertices);
+
+  // create ground plane
+  float plane_vertices[] = {
+    /* position         normal        texcoord */
+
+    -5.0f, 0.0f, -5.0f,   0.0f, 1.0f, 0.0f,   0.0f, 0.0f,
+     5.0f, 0.0f, -5.0f,   0.0f, 1.0f, 0.0f,   1.0f, 0.0f,
+     5.0f, 0.0f,  5.0f,   0.0f, 1.0f, 0.0f,   1.0f, 1.0f,
+
+    -5.0f, 0.0f, -5.0f,   0.0f, 1.0f, 0.0f,   0.0f, 0.0f,
+     5.0f, 0.0f,  5.0f,   0.0f, 1.0f, 0.0f,   1.0f, 1.0f,
+    -5.0f, 0.0f,  5.0f,   0.0f, 1.0f, 0.0f,   0.0f, 1.0f
+  };
+
+  glGenBuffers(1, &planeVertexBuffer);
+
+  glBindBuffer(GL_ARRAY_BUFFER, planeVertexBuffer);
+
+  glBufferData(GL_ARRAY_BUFFER, sizeof(plane_vertices), plane_vertices, GL_STATIC_DRAW);
+
 
   Mat4 projection = mat4_perspective(60.0f * PI / 180.0f,
 				     (float)WINDOW_WIDTH / WINDOW_HEIGHT,
@@ -913,14 +964,21 @@ int main(int argc, char* argv[]) {
     Mat4 rotationY = mat4_rotation_y((float)(angle * PI / 180.0));    
     Mat4 rotation = mat4_multiply(rotationY, rotationX);
     //    Mat4 translation = mat4_translation(0.0f, 0.0f, CAMERA_DISTANCE);
-    Mat4 translation = mat4_translation(playerX, playerY, playerZ + CAMERA_DISTANCE);
+    Mat4 translation = mat4_translation(playerX, playerY, playerZ + CAMERA_DISTANCE);    
     Mat4 model = mat4_multiply(translation, rotation);
+
+    Mat4 planeTranslation = mat4_translation(
+					     0.0f,
+					     -0.25f,
+					     -3.0f
+					     );
     
     // Clear frame
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
-    // Model color.
+    // draw ground
+    draw_plane(&planeTranslation, &projection);
 
     // Draw OBJ
     draw_model(&model, &projection);
