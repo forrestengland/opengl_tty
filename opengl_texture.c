@@ -45,14 +45,21 @@ typedef struct {
     float z;
 } Vec3;
 
+// 2d vector for textures
+typedef struct {
+  float u;
+  float v;
+} Vec2;
+
 // 4x4 column major matrix
 typedef struct {
     float m[16];
 } Mat4;
 
 typedef struct {
-    int v[3];   /* vertex indices */
-    int n[3];   /* normal indices */
+  int v[3];   /* vertex indices */
+  int t[3]; /* texture coords */
+  int n[3];   /* normal indices */
 } Face;
 
 // OBJ data
@@ -63,6 +70,10 @@ int vertex_capacity = 0;
 Vec3 *normals = NULL;
 int normal_count = 0;
 int normal_capacity = 0;
+
+Vec2 *texcoords = NULL;
+int texcoord_count = 0;
+int texcoord_capacity = 0;
 
 Face *faces = NULL;
 int face_count = 0;
@@ -208,6 +219,27 @@ void add_normal(Vec3 n) {
     normals[normal_count++] = n;
 }
 
+// add texture coordinate
+void add_texcoord(Vec2 t)
+{
+    if (texcoord_count >= texcoord_capacity) {
+
+        texcoord_capacity =
+            texcoord_capacity == 0 ? 64 : texcoord_capacity * 2;
+
+        texcoords = realloc(
+            texcoords,
+            texcoord_capacity * sizeof(Vec2)
+        );
+
+        if (!texcoords) {
+            fprintf(stderr, "Failed to allocate texcoords\n");
+            exit(1);
+        }
+    }
+
+    texcoords[texcoord_count++] = t;
+}
 
 // Add triangle
 void add_face(Face f) {
@@ -255,45 +287,32 @@ int load_obj(const char *filename) {
          *
          * v x y z
          */
-        if (line[0] == 'v' &&
-            line[1] == ' ') {
+      if (line[0] == 'v' && line[1] == ' ') {
 
-            Vec3 v;
+	Vec3 v;
 
-            if (sscanf(
-                    line,
-                    "v %f %f %f",
-                    &v.x,
-                    &v.y,
-                    &v.z
-                ) == 3) {
-
+	if (sscanf(line, "v %f %f %f", &v.x, &v.y, &v.z) == 3) {
                 add_vertex(v);
-            }
-        }
+	}
 
-        /*
-         * Vertex normal:
-         *
-         * vn x y z
-         */
-        else if (line[0] == 'v' &&
-                 line[1] == 'n' &&
-                 line[2] == ' ') {
+	// texture coordinate
+      } else if (line[0] == 'v' && line[1] == 't' && line[2] == ' ') {
 
-            Vec3 n;
+	Vec2 t;
 
-            if (sscanf(
-                    line,
-                    "vn %f %f %f",
-                    &n.x,
-                    &n.y,
-                    &n.z
-                ) == 3) {
+	if (sscanf(line, "vt %f %f", &t.u, &t.v) == 2) {
+	  add_texcoord(t);
+	}
 
-                add_normal(n);
-            }
-        }
+	// Vertex normal:
+      } else if (line[0] == 'v' && line[1] == 'n' && line[2] == ' ') {
+
+	Vec3 n;
+
+	if (sscanf(line, "vn %f %f %f", &n.x, &n.y, &n.z) == 3) {
+	  add_normal(n);
+	}
+      }
 
         /*
          * Face:
@@ -310,6 +329,7 @@ int load_obj(const char *filename) {
 
 	  int v[64];
 	  int n[64];
+	  int t[64];
 
 	  int vertex_count = 0;
 
@@ -332,11 +352,12 @@ int load_obj(const char *filename) {
 	    int texture_index;
 
 	    if (sscanf(token, "%d/%d/%d",
-           &vertex_index,
-           &texture_index,
-           &normal_index) == 3) {
+		       &vertex_index,
+		       &texture_index,
+		       &normal_index) == 3) {
 
 	      v[vertex_count] = vertex_index - 1;
+	      t[vertex_count] = texture_index - 1;
 	      n[vertex_count] = normal_index - 1;
 
 	      vertex_count++;
@@ -390,6 +411,10 @@ int load_obj(const char *filename) {
 	      f.n[0] = n[0];
 	      f.n[1] = n[i];
 	      f.n[2] = n[i + 1];
+
+	      f.t[0] = t[0];
+	      f.t[1] = t[i];
+	      f.t[2] = t[i + 1];
 
 	      add_face(f);
 	    }
