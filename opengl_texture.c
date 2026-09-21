@@ -30,39 +30,39 @@ unsigned char* image_data = 0;
 // rotation speed of player object
 #define ROTATION_SPEED_X 5.0
 #define ROTATION_SPEED_Y 15.0
-
+// pi
 #define PI 3.1415926535
+// show cursor or not
+#define SHOW_CURSOR 0
 
+// stuff gl needs access to
 GLuint program;
 GLuint vertexBuffer;
 GLuint planeVertexBuffer;
 GLuint texture;
-
 GLint positionAttribute;
-
 GLint matrixUniform;
 GLint projectionUniform;
-GLint textureUniform;
 GLint viewUniform;
-
+GLint textureUniform;
+// 'hud' stuff
 GLuint hudProgram;
 GLuint hudVertexBuffer;
-
 GLint hudPositionAttribute;
 GLint hudScreenSizeUniform;
 GLint hudColorUniform;
 
-// number of vertices to send to glDrawArrays()
+// number of vertices to send to glDrawArrays() for player model
 int draw_vertex_count = 0;
-
+// player velocity in vertical y direction (gravity / jumping)
 float playerVelocityY = 0.0f;
-
+// constants for gravity and jumping
 const float GRAVITY = -9.8f;
 const float JUMP_VELOCITY = 5.0f;
 const float GROUND_Y = -0.25f;
 const float PLAYER_HALF_HEIGHT = 0.2f;
 
-// player coords
+// player coordinates
 float playerX = 0.0f;
 float playerY = GROUND_Y + PLAYER_HALF_HEIGHT;
 float playerZ = 0.0f;
@@ -85,6 +85,7 @@ typedef struct {
     float m[16];
 } Mat4;
 
+// face definition
 typedef struct {
   int v[3];   /* vertex indices */
   int t[3]; /* texture coords */
@@ -92,22 +93,24 @@ typedef struct {
 } Face;
 
 // OBJ data
+// vertices
 Vec3 *vertices = NULL;
 int vertex_count = 0;
 int vertex_capacity = 0;
-
+// normals
 Vec3 *normals = NULL;
 int normal_count = 0;
 int normal_capacity = 0;
-
+// texture coordinates
 Vec2 *texcoords = NULL;
 int texcoord_count = 0;
 int texcoord_capacity = 0;
-
+// faces
 Face *faces = NULL;
 int face_count = 0;
 int face_capacity = 0;
 
+// vector operations
 Vec3 vec3_subtract(Vec3 a, Vec3 b) {
   Vec3 result = {a.x - b.x, a.y - b.y, a.z - b.z};
   return result;
@@ -129,6 +132,7 @@ Vec3 vec3_cross(Vec3 a, Vec3 b) {
   return result;
 }
 
+// matrix functions
 // identity matrix
 Mat4 mat4_identity(void)
 {
@@ -158,6 +162,7 @@ Mat4 mat4_rotation_x(float angle)
     return result;
 }
 
+// y rotation matrix
 Mat4 mat4_rotation_y(float angle)
 {
     float c = cosf(angle);
@@ -362,8 +367,7 @@ void add_face(Face f) {
     faces[face_count++] = f;
 }
 
-
-// Load OBJ
+// Load OBJ file
 int load_obj(const char *filename) {
     FILE *file = fopen(filename, "r");
 
@@ -534,6 +538,7 @@ int load_obj(const char *filename) {
     return 1;
 }
 
+// 3d vertex shader program
 const char *vertexShaderSource =
   "attribute vec3 position;\n"
   "attribute vec3 normal;\n"
@@ -550,6 +555,7 @@ const char *vertexShaderSource =
   "    vertexTexCoord = texCoord;\n"
   "}\n";
 
+// 3d fragment shader program
 const char *fragmentShaderSource =
   "precision mediump float;\n"
   "varying vec3 vertexNormal;\n"
@@ -576,6 +582,7 @@ const char *fragmentShaderSource =
   "    );\n"
   "}\n";
 
+// hud vertex shader program
 const char *hudVertexShaderSource =
     "attribute vec2 position;\n"
     "uniform vec2 screenSize;\n"
@@ -587,6 +594,7 @@ const char *hudVertexShaderSource =
     "    gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);\n"
     "}\n";
 
+// hud fragment shader program
 const char *hudFragmentShaderSource =
     "precision mediump float;\n"
     "uniform vec4 color;\n"
@@ -596,50 +604,36 @@ const char *hudFragmentShaderSource =
     "    gl_FragColor = color;\n"
     "}\n";
 
-GLuint compileShader(GLenum type, const char *source)
-{
-    GLuint shader = glCreateShader(type);
+// compile a shader program
+GLuint compileShader(GLenum type, const char *source) {
 
-    glShaderSource(shader, 1, &source, NULL);
-    glCompileShader(shader);
+  GLuint shader = glCreateShader(type);
 
-    GLint success;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
+  glShaderSource(shader, 1, &source, NULL);
+  glCompileShader(shader);
 
-    if (!success) {
-        char log[512];
+  GLint success;
+  glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
 
-        glGetShaderInfoLog(
-            shader,
-            sizeof(log),
-            NULL,
-            log
-        );
+  if (!success) {
+    char log[512];
 
-        fprintf(stderr,
-                "Shader compilation failed:\n%s\n",
-                log);
+    glGetShaderInfoLog(shader, sizeof(log), NULL, log);
 
-        glDeleteShader(shader);
-        return 0;
-    }
+    fprintf(stderr, "Shader compilation failed:\n%s\n", log);
 
-    return shader;
+    glDeleteShader(shader);
+    return 0;
+  }
+
+  return shader;
 }
 
-GLuint createProgram(void)
-{
-    GLuint vertexShader =
-        compileShader(
-            GL_VERTEX_SHADER,
-            vertexShaderSource
-        );
+// create a shader program
+GLuint createProgram(void) {
 
-    GLuint fragmentShader =
-        compileShader(
-            GL_FRAGMENT_SHADER,
-            fragmentShaderSource
-        );
+  GLuint vertexShader =compileShader(GL_VERTEX_SHADER, vertexShaderSource);
+  GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
 
     if (!vertexShader || !fragmentShader)
         return 0;
@@ -656,25 +650,15 @@ GLuint createProgram(void)
     glLinkProgram(program);
 
     GLint success;
-    glGetProgramiv(
-        program,
-        GL_LINK_STATUS,
-        &success
-    );
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
 
     if (!success) {
+      
         char log[512];
 
-        glGetProgramInfoLog(
-            program,
-            sizeof(log),
-            NULL,
-            log
-        );
+        glGetProgramInfoLog(program, sizeof(log), NULL, log);
 
-        fprintf(stderr,
-                "Program linking failed:\n%s\n",
-                log);
+        fprintf(stderr, "Program linking failed:\n%s\n", log);
 
         glDeleteProgram(program);
         program = 0;
@@ -686,19 +670,12 @@ GLuint createProgram(void)
     return program;
 }
 
+// create the hud 2d overlay shader programs
 GLuint createHudProgram(void)
 {
-    GLuint vertexShader =
-        compileShader(
-            GL_VERTEX_SHADER,
-            hudVertexShaderSource
-        );
 
-    GLuint fragmentShader =
-        compileShader(
-            GL_FRAGMENT_SHADER,
-            hudFragmentShaderSource
-        );
+  GLuint vertexShader = compileShader(GL_VERTEX_SHADER, hudVertexShaderSource);
+  GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, hudFragmentShaderSource);
 
     if (!vertexShader || !fragmentShader)
         return 0;
@@ -708,37 +685,21 @@ GLuint createHudProgram(void)
     glAttachShader(program, vertexShader);
     glAttachShader(program, fragmentShader);
 
-    glBindAttribLocation(
-        program,
-        0,
-        "position"
-    );
+    glBindAttribLocation(program, 0, "position");
 
     glLinkProgram(program);
 
     GLint success;
 
-    glGetProgramiv(
-        program,
-        GL_LINK_STATUS,
-        &success
-    );
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
 
     if (!success) {
+      
         char log[512];
 
-        glGetProgramInfoLog(
-            program,
-            sizeof(log),
-            NULL,
-            log
-        );
+        glGetProgramInfoLog(program, sizeof(log), NULL, log);
 
-        fprintf(
-            stderr,
-            "HUD program linking failed:\n%s\n",
-            log
-        );
+        fprintf(stderr, "HUD program linking failed:\n%s\n", log);
 
         glDeleteProgram(program);
         program = 0;
@@ -750,201 +711,100 @@ GLuint createHudProgram(void)
     return program;
 }
 
-// draw ground
+// draw ground plane
 void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection)
 {
     glUseProgram(program);
 
+    // use the texture
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture);
 
     glUniform1i(textureUniform, 0);
-
-    glUniformMatrix4fv(
-        matrixUniform,
-        1,
-        GL_FALSE,
-        model->m
-    );
-
-    glUniformMatrix4fv(
-        projectionUniform,
-        1,
-        GL_FALSE,
-        projection->m
-    );
-
+    glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
+    glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projection->m);
     glUniformMatrix4fv(viewUniform, 1, GL_FALSE, view->m);    
-
     glBindBuffer(GL_ARRAY_BUFFER, planeVertexBuffer);
-
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        8 * sizeof(float),
-        (void *)0
-    );
-
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)0);
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(
-        1,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        8 * sizeof(float),
-        (void *)(3 * sizeof(float))
-    );
-
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)(3 * sizeof(float)));
     glEnableVertexAttribArray(2);
-    glVertexAttribPointer(
-        2,
-        2,
-        GL_FLOAT,
-        GL_FALSE,
-        8 * sizeof(float),
-        (void *)(6 * sizeof(float))
-    );
-
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)(6 * sizeof(float)));
     glDrawArrays(GL_TRIANGLES, 0, 6);
-
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
 }
 
-void draw_hud(
-    int screenWidth,
-    int screenHeight
-)
-{
-    float rect[] = {
-         10.0f, 10.0f,
-        110.0f, 10.0f,
-        110.0f, 60.0f,
+void draw_hud(int screenWidth, int screenHeight) {
+  
+  float rect[] = {
+    10.0f, 10.0f,
+    110.0f, 10.0f,
+    110.0f, 60.0f,
 
-         10.0f, 10.0f,
-        110.0f, 60.0f,
-         10.0f, 60.0f
-    };
+    10.0f, 10.0f,
+    110.0f, 60.0f,
+    10.0f, 60.0f
+  };
 
-    glDisable(GL_DEPTH_TEST);
-    glDepthMask(GL_FALSE);
+  glDisable(GL_DEPTH_TEST);
+  glDepthMask(GL_FALSE);
+  glUseProgram(hudProgram);
+  // Upload rectangle vertices.
+  glBindBuffer(GL_ARRAY_BUFFER, hudVertexBuffer);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(rect), rect, GL_DYNAMIC_DRAW);
+  // Position attribute.
+  glEnableVertexAttribArray(hudPositionAttribute);
+  glVertexAttribPointer(hudPositionAttribute, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
 
-    glUseProgram(hudProgram);
-
-    /*
-     * Upload rectangle vertices.
-     */
-    glBindBuffer(GL_ARRAY_BUFFER, hudVertexBuffer);
-
-    glBufferData(
-        GL_ARRAY_BUFFER,
-        sizeof(rect),
-        rect,
-        GL_DYNAMIC_DRAW
-    );
-
-    /*
-     * Position attribute.
-     */
-    glEnableVertexAttribArray(hudPositionAttribute);
-
-    glVertexAttribPointer(
-        hudPositionAttribute,
-        2,
-        GL_FLOAT,
-        GL_FALSE,
-        2 * sizeof(float),
-        (void *)0
-    );
-
-    /*
-     * Tell the shader how large the screen is.
-     */
-    glUniform2f(
-        hudScreenSizeUniform,
-        (float)screenWidth,
-        (float)screenHeight
-    );
-
-    /*
-     * Rectangle color.
-     */
-    glUniform4f(
-        hudColorUniform,
-        1.0f,
-        1.0f,
-        1.0f,
-        1.0f
-    );
-
-    /*
-     * Draw two triangles = rectangle.
-     */
-    glDrawArrays(
-        GL_TRIANGLES,
-        0,
-        6
-    );
-
-    glDisableVertexAttribArray(hudPositionAttribute);
-
-    glDepthMask(GL_TRUE);
-    glEnable(GL_DEPTH_TEST);
+  // Tell the shader how large the screen is.
+  glUniform2f(hudScreenSizeUniform, (float)screenWidth, (float)screenHeight);
+  // Rectangle color.
+  glUniform4f(hudColorUniform, 1.0f, 1.0f, 1.0f, 1.0f);
+  // Draw two triangles = rectangle.
+  glDrawArrays(GL_TRIANGLES, 0, 6);
+  glDisableVertexAttribArray(hudPositionAttribute);
+  glDepthMask(GL_TRUE);
+  glEnable(GL_DEPTH_TEST);
 }
 
 // Draw OBJ model
 void draw_model(Mat4 *model, Mat4 *view, Mat4 *projection) {
   
-    glUseProgram(program);
+  glUseProgram(program);
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, texture);
+  glUniform1i(textureUniform,	0);
+  glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
+  glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projection->m);
+  glUniformMatrix4fv(viewUniform, 1, GL_FALSE, view->m);    
+  glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
+  // Position
+  glEnableVertexAttribArray(0);
+  glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)0);
+  // Normal
+  glEnableVertexAttribArray(1);
+  glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)(3 * sizeof(float)));
+  // texcoords
+  glEnableVertexAttribArray(2);
+  glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 8 * sizeof(float), (void *)(6 * sizeof(float)));
 
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
-
-    glUniform1i(textureUniform,	0);
-    glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
-    glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projection->m);
-    glUniformMatrix4fv(viewUniform, 1, GL_FALSE, view->m);    
-
-    glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-
-    // Position
-    glEnableVertexAttribArray(0);
-
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
-			  8 * sizeof(float), (void *)0);
-
-    // Normal
-    glEnableVertexAttribArray(1);
-
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
-			  8 * sizeof(float), (void *)(3 * sizeof(float)));
-
-    // texcoords
-    glEnableVertexAttribArray(2);
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE,
-			  8 * sizeof(float), (void *)(6 * sizeof(float)));
-
-    if (WIREFRAME) {
-      for (int i = 0; i < draw_vertex_count; i += 3) {
-	glDrawArrays(GL_LINE_LOOP, i, 3);
-      }
-    } else {
-      glDrawArrays(
-		   GL_TRIANGLES,
-		   0,
-		   draw_vertex_count
-		   );
+  // here we can draw a wireframe or solid model
+  if (WIREFRAME) {
+    for (int i = 0; i < draw_vertex_count; i += 3) {
+      glDrawArrays(GL_LINE_LOOP, i, 3);
     }
+  } else {
+    glDrawArrays(GL_TRIANGLES, 0, draw_vertex_count);
+  }
 
-    glDisableVertexAttribArray(0);
-    glDisableVertexAttribArray(1);
+  glDisableVertexAttribArray(0);
+  glDisableVertexAttribArray(1);
 }
 
-// Main
+// main program entry
 int main(int argc, char* argv[]) {
 
   // init sdl2
@@ -958,27 +818,23 @@ int main(int argc, char* argv[]) {
   printf("SDL video driver: %s\n",
        SDL_GetCurrentVideoDriver());
 
-  // don't show the mouse cursor
-  SDL_ShowCursor(SDL_DISABLE);
+  // mouse cursor
+  if (!SHOW_CURSOR)
+    SDL_ShowCursor(SDL_DISABLE);
 
-  /*
-   * Ask SDL for an OpenGL ES 2.0 context.
-   */
-  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK,
-		      SDL_GL_CONTEXT_PROFILE_ES);
+  // Ask SDL for an OpenGL ES 2.0 context.
+  SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
 
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
   SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
   SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
   SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-  SDL_Window *window = SDL_CreateWindow("SDL2 OpenGL ES", 0, 0,	SCREEN_W, SCREEN_H,
-					SDL_WINDOW_OPENGL);
+  SDL_Window *window = SDL_CreateWindow("SDL2 OpenGL ES", 0, 0,	SCREEN_W, SCREEN_H, SDL_WINDOW_OPENGL);
 
   if (!window) {
-    fprintf(stderr,
-	    "SDL_CreateWindow failed: %s\n",
-	    SDL_GetError());
+    
+    fprintf(stderr, "SDL_CreateWindow failed: %s\n",SDL_GetError());
 
     SDL_Quit();
     return 1;
@@ -991,9 +847,8 @@ int main(int argc, char* argv[]) {
 
   SDL_GLContext context = SDL_GL_CreateContext(window);
   if (!context) {
-    fprintf(stderr,
-	    "SDL_GL_CreateContext failed: %s\n",
-	    SDL_GetError());
+    
+    fprintf(stderr, "SDL_GL_CreateContext failed: %s\n", SDL_GetError());
 
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -1043,22 +898,12 @@ int main(int argc, char* argv[]) {
   }
 
   hudPositionAttribute =
-    glGetAttribLocation(
-			hudProgram,
-			"position"
-			);
+    glGetAttribLocation(hudProgram, "position");
 
-  hudScreenSizeUniform =
-    glGetUniformLocation(
-			 hudProgram,
-			 "screenSize"
-			 );
+  hudScreenSizeUniform = glGetUniformLocation(hudProgram, "screenSize");
 
   hudColorUniform =
-    glGetUniformLocation(
-			 hudProgram,
-			 "color"
-			 );
+    glGetUniformLocation(hudProgram, "color");
 
   // hud buffer
   glGenBuffers(1, &hudVertexBuffer);
@@ -1080,22 +925,10 @@ int main(int argc, char* argv[]) {
   // load texture
   glGenTextures(1, &texture);
   glBindTexture(GL_TEXTURE_2D, texture);
-  glTexParameteri(GL_TEXTURE_2D,
-		  GL_TEXTURE_MIN_FILTER,
-		  GL_LINEAR);
-
-  glTexParameteri(GL_TEXTURE_2D,
-		  GL_TEXTURE_MAG_FILTER,
-		  GL_LINEAR);
-
-  glTexParameteri(GL_TEXTURE_2D,
-		  GL_TEXTURE_WRAP_S,
-		  GL_REPEAT);
-
-  glTexParameteri(GL_TEXTURE_2D,
-		  GL_TEXTURE_WRAP_T,
-		  GL_REPEAT);
-  
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image_width, image_height, 0,
 	       GL_RGB, GL_UNSIGNED_BYTE, image_data);
 
@@ -1104,31 +937,23 @@ int main(int argc, char* argv[]) {
   if (!load_obj(filename)) {
     return 1;
   }
-
   printf("Texture coordinates: %d\n", texcoord_count);
-
   for (int i = 0; i < texcoord_count; i++) {
     printf("%d: u=%f v=%f\n", i, texcoords[i].u, texcoords[i].v);
   }
 
   // send obj faces to gpu
   draw_vertex_count = face_count * 3;
-
   float *model_vertices = malloc(draw_vertex_count * 8 * sizeof(float));
-
   if (!model_vertices) {
     fprintf(stderr, "Failed to allocate model vertices\n");
     return 1;
   }
 
   float scale = 0.2f;
-
   int index = 0;
-
   for (int i = 0; i < face_count; i++) {
-
     Face *face = &faces[i];
-
     for (int j = 0; j < 3; j++) {
 
       Vec3 *v = &vertices[face->v[j]];
