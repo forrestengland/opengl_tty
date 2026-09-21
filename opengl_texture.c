@@ -15,14 +15,14 @@ int image_width, image_height, image_channels;
 unsigned char* image_data = 0;
 
 #define WIREFRAME 0
-
+#define CAMERA_DISTANCE -1.0
 #define OBJFILE "cube.obj"
 #define IMAGEFILE "cube_texture.bmp"
 
 #define WINDOW_WIDTH  640
 #define WINDOW_HEIGHT 480
 
-#define ROTATION_SPEED 10.0
+#define ROTATION_SPEED 30.0
 
 #define PI 3.1415926535
 
@@ -34,6 +34,7 @@ GLint positionAttribute;
 
 GLint matrixUniform;
 GLint projectionUniform;
+GLint textureUniform;
 
 // number of vertices to send to glDrawArrays()
 int draw_vertex_count = 0;
@@ -103,6 +104,21 @@ Mat4 mat4_rotation_x(float angle)
         0.0f,    c,    s, 0.0f,
         0.0f,   -s,    c, 0.0f,
         0.0f, 0.0f, 0.0f, 1.0f
+    }};
+
+    return result;
+}
+
+Mat4 mat4_rotation_y(float angle)
+{
+    float c = cosf(angle);
+    float s = sinf(angle);
+
+    Mat4 result = {{
+         c, 0.0f, -s, 0.0f,
+       0.0f, 1.0f, 0.0f, 0.0f,
+         s, 0.0f,  c, 0.0f,
+       0.0f, 0.0f, 0.0f, 1.0f
     }};
 
     return result;
@@ -435,39 +451,45 @@ int load_obj(const char *filename) {
 }
 
 const char *vertexShaderSource =
-    "attribute vec3 position;\n"
-    "attribute vec3 normal;\n"
-    "uniform mat4 modelMatrix;\n"
-    "uniform mat4 projectionMatrix;\n"
-    "varying vec3 vertexNormal;\n"
-    "\n"
-    "void main() {\n"
-    "    gl_Position = projectionMatrix * modelMatrix * vec4(position, 1.0);\n"
-    "    vertexNormal = normal;\n"
-    "}\n";
+  "attribute vec3 position;\n"
+  "attribute vec3 normal;\n"
+  "attribute vec2 texCoord;\n"
+  "uniform mat4 modelMatrix;\n"
+  "uniform mat4 projectionMatrix;\n"
+  "varying vec3 vertexNormal;\n"
+  "varying vec2 vertexTexCoord;\n"
+  "\n"
+  "void main() {\n"
+  "    gl_Position = projectionMatrix * modelMatrix * vec4(position, 1.0);\n"
+  "    vertexNormal = normal;\n"
+  "    vertexTexCoord = texCoord;\n"
+  "}\n";
 
 const char *fragmentShaderSource =
-    "precision mediump float;\n"
-    "varying vec3 vertexNormal;\n"
-    "\n"
-    "void main()\n"
-    "{\n"
-    "    vec3 lightDirection = normalize(vec3(1.0, 1.0, 1.0));\n"
-    "\n"
-    "    float brightness = max(\n"
-    "        dot(normalize(vertexNormal), lightDirection),\n"
-    "        0.0\n"
-    "    );\n"
-    "\n"
-    "    float ambient = 0.2;\n"
-    "\n"
-    "    vec3 color = vec3(0.1, 0.8, 0.4);\n"
-    "\n"
-    "    gl_FragColor = vec4(\n"
-    "        color * (ambient + brightness),\n"
-    "        1.0\n"
-    "    );\n"
-    "}\n";
+  "precision mediump float;\n"
+  "varying vec3 vertexNormal;\n"
+  "varying vec2 vertexTexCoord;\n"
+  "uniform sampler2D textureSampler;\n"
+  "\n"
+  "void main()\n"
+  "{\n"
+  "    vec3 lightDirection = normalize(vec3(1.0, 1.0, 1.0));\n"
+  "\n"
+  "    float brightness = max(\n"
+  "        dot(normalize(vertexNormal), lightDirection),\n"
+  "        0.0\n"
+  "    );\n"
+  "\n"
+  "    float ambient = 0.2;\n"
+  "\n"
+  //  "    vec3 color = vec3(0.1, 0.8, 0.4);\n"
+  "    vec4 texColor = texture2D(textureSampler, vertexTexCoord);\n"
+  "\n"
+  "    gl_FragColor = vec4(\n"
+  "        texColor.rgb * (ambient + brightness),\n"
+  "        texColor.a\n"
+  "    );\n"
+  "}\n";
 
 GLuint compileShader(GLenum type, const char *source)
 {
@@ -522,13 +544,11 @@ GLuint createProgram(void)
     glAttachShader(program, vertexShader);
     glAttachShader(program, fragmentShader);
 
-    glBindAttribLocation(
-        program,
-        0,
-        "position"
-    );
+    glBindAttribLocation(program, 0, "position");
 
     glBindAttribLocation(program, 1, "normal");
+
+    glBindAttribLocation(program, 2, "texCoord");
 
     glLinkProgram(program);
 
@@ -568,6 +588,11 @@ void draw_model(Mat4 *model, Mat4 *projection) {
   
     glUseProgram(program);
 
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glUniform1i(textureUniform,	0);
+
     glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
 
     glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projection->m);
@@ -585,6 +610,11 @@ void draw_model(Mat4 *model, Mat4 *projection) {
 
     glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
 			  8 * sizeof(float), (void *)(3 * sizeof(float)));
+
+    // texcoords
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE,
+			  8 * sizeof(float), (void *)(6 * sizeof(float)));
 
     if (WIREFRAME) {
       for (int i = 0; i < draw_vertex_count; i += 3) {
@@ -700,11 +730,13 @@ int main(int argc, char* argv[]) {
   // handle to communicate with the shader program
   //  angleUniform = glGetUniformLocation(program, "angle");
   matrixUniform = glGetUniformLocation(program, "modelMatrix");
-  projectionUniform = glGetUniformLocation(program, "projectionMatrix");  
+  projectionUniform = glGetUniformLocation(program, "projectionMatrix");
+  textureUniform = glGetUniformLocation(program, "textureSampler");
   
   int running = 1;
 
   // load image for texture
+  stbi_set_flip_vertically_on_load(1);
   image_data = stbi_load(IMAGEFILE, &image_width, &image_height,
 			 &image_channels, 0);
   if (image_data == NULL) {
@@ -718,6 +750,29 @@ int main(int argc, char* argv[]) {
   // load texture
   glGenTextures(1, &texture);
   glBindTexture(GL_TEXTURE_2D, texture);
+  glTexParameteri(
+		  GL_TEXTURE_2D,
+		  GL_TEXTURE_MIN_FILTER,
+		  GL_LINEAR
+		  );
+
+  glTexParameteri(
+		  GL_TEXTURE_2D,
+		  GL_TEXTURE_MAG_FILTER,
+		  GL_LINEAR
+		  );
+
+  glTexParameteri(
+		  GL_TEXTURE_2D,
+		  GL_TEXTURE_WRAP_S,
+		  GL_REPEAT
+		  );
+
+  glTexParameteri(
+		  GL_TEXTURE_2D,
+		  GL_TEXTURE_WRAP_T,
+		  GL_REPEAT
+		  );  
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image_width, image_height, 0,
 	       GL_RGB, GL_UNSIGNED_BYTE, image_data);
 
@@ -726,7 +781,18 @@ int main(int argc, char* argv[]) {
   /*  if (argc > 1) filename = argv[1]; // from command line arg */
   if (!load_obj(filename)) {
     return 1;
-  } 
+  }
+
+  printf("Texture coordinates: %d\n", texcoord_count);
+
+  for (int i = 0; i < texcoord_count; i++) {
+    printf(
+	   "%d: u=%f v=%f\n",
+	   i,
+	   texcoords[i].u,
+	   texcoords[i].v
+	   );
+  }
 
   // send obj faces to gpu
   draw_vertex_count = face_count * 3;
@@ -821,8 +887,10 @@ int main(int argc, char* argv[]) {
     }
 
     // calculate matrices
-    Mat4 rotation = mat4_rotation_x((float)(angle * PI / 180.0));
-    Mat4 translation = mat4_translation(0.0f, 0.0f, -3.0f);
+    Mat4 rotationX = mat4_rotation_x((float)(angle * PI / 180.0));
+    Mat4 rotationY = mat4_rotation_y((float)(angle * PI / 180.0));    
+    Mat4 rotation = mat4_multiply(rotationY, rotationX);
+    Mat4 translation = mat4_translation(0.0f, 0.0f, CAMERA_DISTANCE);
     Mat4 model = mat4_multiply(translation, rotation);
     
     // Clear frame
