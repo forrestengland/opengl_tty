@@ -8,10 +8,16 @@
 #include <math.h>
 #include <string.h>
 
-// #define STB_IMAGE_IMPLEMENTATION
-// #include "stb_image.h"
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
-#define WIREFRAME 1
+int image_width, image_height, image_channels;
+unsigned char* image_data = 0;
+
+#define WIREFRAME 0
+
+#define OBJFILE "cube.obj"
+#define IMAGEFILE "cube_texture.bmp"
 
 #define WINDOW_WIDTH  640
 #define WINDOW_HEIGHT 480
@@ -22,6 +28,8 @@
 
 GLuint program;
 GLuint vertexBuffer;
+GLuint texture;
+
 GLint positionAttribute;
 
 GLint matrixUniform;
@@ -701,12 +709,29 @@ int main(int argc, char* argv[]) {
   
   int running = 1;
 
-  // Load OBJ
-  char* filename = "shape.obj"; // default
-  if (argc > 1) filename = argv[1]; // from command line arg
-  if (!load_obj(filename)) {
+  // load image for texture
+  image_data = stbi_load(IMAGEFILE, &image_width, &image_height,
+			 &image_channels, 0);
+  if (image_data == NULL) {
+    printf("error loading texture image data '%s'\n", IMAGEFILE);
     return 1;
   }
+
+  printf("loaded texture: %d x %d, %d channels\n", image_width, image_height,
+	 image_channels);
+
+  // load texture
+  glGenTextures(1, &texture);
+  glBindTexture(GL_TEXTURE_2D, texture);
+  glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image_width, image_height, 0,
+	       GL_RGB, GL_UNSIGNED_BYTE, image_data);
+
+  // Load OBJ
+  char* filename = OBJFILE; // default
+  /*  if (argc > 1) filename = argv[1]; // from command line arg */
+  if (!load_obj(filename)) {
+    return 1;
+  } 
 
   // send obj faces to gpu
   draw_vertex_count = face_count * 3;
