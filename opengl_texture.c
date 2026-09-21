@@ -16,8 +16,10 @@ unsigned char* image_data = 0;
 
 #define WIREFRAME 0
 #define CAMERA_DISTANCE -1.0
-#define OBJFILE "cube.obj"
-#define IMAGEFILE "cube_texture.bmp"
+//#define OBJFILE "cube.obj"
+//#define IMAGEFILE "cube_texture.bmp"
+#define OBJFILE "deer_tex.obj"
+#define IMAGEFILE "deer_auv.bmp"
 
 #define WINDOW_WIDTH  640
 #define WINDOW_HEIGHT 480
