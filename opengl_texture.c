@@ -15,11 +15,11 @@ int image_width, image_height, image_channels;
 unsigned char* image_data = 0;
 
 #define WIREFRAME 0
-#define CAMERA_DISTANCE -1.0
-//#define OBJFILE "cube.obj"
-//#define IMAGEFILE "cube_texture.bmp"
-#define OBJFILE "deer_tex.obj"
-#define IMAGEFILE "deer_auv.bmp"
+#define CAMERA_DISTANCE -3.0
+#define OBJFILE "cube.obj"
+#define IMAGEFILE "cube_texture.bmp"
+// #define OBJFILE "deer_tex.obj"
+// #define IMAGEFILE "deer_auv.bmp"
 
 #define WINDOW_WIDTH  640
 #define WINDOW_HEIGHT 480
@@ -40,6 +40,11 @@ GLint textureUniform;
 
 // number of vertices to send to glDrawArrays()
 int draw_vertex_count = 0;
+
+// player coords
+float playerX = 0.0f;
+float playerY = 0.0f;
+float playerZ = 0.0f;
 
 // Basic 3D types
 typedef struct {
@@ -878,8 +883,23 @@ int main(int argc, char* argv[]) {
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT)
 	running = 0;
-      if (event.type == SDL_KEYDOWN)
-	running = 0;
+      //      if (event.type == SDL_KEYDOWN)
+      //	running = 0;
+    }
+
+    // keyboard -> movement
+    const Uint8* keyboard = SDL_GetKeyboardState(NULL);
+    if (keyboard[SDL_SCANCODE_W]) {
+      playerZ -= 0.5 * deltaTime;
+    }
+    if (keyboard[SDL_SCANCODE_S]) {
+      playerZ += 0.5 * deltaTime;
+    }
+    if (keyboard[SDL_SCANCODE_A]) {
+      playerX -= 0.5 * deltaTime;
+    }
+    if (keyboard[SDL_SCANCODE_D]) {
+      playerX += 0.5 * deltaTime;
     }
 
     // update Rotation
@@ -892,7 +912,8 @@ int main(int argc, char* argv[]) {
     Mat4 rotationX = mat4_rotation_x((float)(angle * PI / 180.0));
     Mat4 rotationY = mat4_rotation_y((float)(angle * PI / 180.0));    
     Mat4 rotation = mat4_multiply(rotationY, rotationX);
-    Mat4 translation = mat4_translation(0.0f, 0.0f, CAMERA_DISTANCE);
+    //    Mat4 translation = mat4_translation(0.0f, 0.0f, CAMERA_DISTANCE);
+    Mat4 translation = mat4_translation(playerX, playerY, playerZ + CAMERA_DISTANCE);
     Mat4 model = mat4_multiply(translation, rotation);
     
     // Clear frame
