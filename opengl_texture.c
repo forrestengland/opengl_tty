@@ -16,7 +16,7 @@ unsigned char* image_data = 0;
 
 #define SCREEN_W 640
 #define SCREEN_H 480
-
+#define PLAYER_SPEED 2.0
 #define WIREFRAME 0
 #define CAMERA_DISTANCE -3.0
 #define OBJFILE "cube.obj"
@@ -27,7 +27,7 @@ unsigned char* image_data = 0;
 #define WINDOW_WIDTH  640
 #define WINDOW_HEIGHT 480
 
-#define ROTATION_SPEED 30.0
+#define ROTATION_SPEED 5.0
 
 #define PI 3.1415926535
 
@@ -41,13 +41,14 @@ GLint positionAttribute;
 GLint matrixUniform;
 GLint projectionUniform;
 GLint textureUniform;
+GLint viewUniform;
 
 // number of vertices to send to glDrawArrays()
 int draw_vertex_count = 0;
 
 // player coords
 float playerX = 0.0f;
-float playerY = 0.0f;
+float playerY = 0.5f;
 float playerZ = 0.0f;
 
 // Basic 3D types
@@ -90,6 +91,27 @@ int texcoord_capacity = 0;
 Face *faces = NULL;
 int face_count = 0;
 int face_capacity = 0;
+
+Vec3 vec3_subtract(Vec3 a, Vec3 b) {
+  Vec3 result = {a.x - b.x, a.y - b.y, a.z - b.z};
+  return result;
+}
+
+Vec3 vec3_normalize(Vec3 v) {
+  float length = sqrtf(v.x * v.x + v.y * v.y + v.z * v.z);
+  Vec3 result = {v.x / length, v.y / length, v.z / length};
+  return result;
+}
+
+Vec3 vec3_cross(Vec3 a, Vec3 b) {
+  Vec3 result = {
+    a.y * b.z - a.z * b.y,
+    a.z * b.x - a.x * b.z,
+    a.x * b.y - a.y * b.x
+  };
+
+  return result;
+}
 
 // identity matrix
 Mat4 mat4_identity(void)
@@ -190,6 +212,41 @@ Mat4 mat4_perspective(
     }};
 
     return result;
+}
+
+Mat4 mat4_look_at(Vec3 eye, Vec3 target, Vec3 up) {
+
+  Vec3 forward = vec3_normalize(vec3_subtract(target, eye));
+
+  Vec3 right = vec3_normalize(vec3_cross(forward, up));
+
+  Vec3 cameraUp = vec3_cross(right, forward);
+
+  Mat4 result = {{
+      right.x,       cameraUp.x,      -forward.x,       0.0f,
+      right.y,       cameraUp.y,      -forward.y,       0.0f,
+      right.z,       cameraUp.z,      -forward.z,       0.0f,
+
+      -(
+	right.x * eye.x +
+	right.y * eye.y +
+	right.z * eye.z
+	),
+
+      -(
+	cameraUp.x * eye.x +
+	cameraUp.y * eye.y +
+	cameraUp.z * eye.z
+	),
+
+      forward.x * eye.x +
+      forward.y * eye.y +
+      forward.z * eye.z,
+
+      1.0f
+    }};
+
+  return result;
 }
 
 // Time
@@ -467,11 +524,12 @@ const char *vertexShaderSource =
   "attribute vec2 texCoord;\n"
   "uniform mat4 modelMatrix;\n"
   "uniform mat4 projectionMatrix;\n"
+  "uniform mat4 viewMatrix;\n"  
   "varying vec3 vertexNormal;\n"
   "varying vec2 vertexTexCoord;\n"
   "\n"
   "void main() {\n"
-  "    gl_Position = projectionMatrix * modelMatrix * vec4(position, 1.0);\n"
+  "    gl_Position = projectionMatrix * viewMatrix * modelMatrix * vec4(position, 1.0);\n"
   "    vertexNormal = normal;\n"
   "    vertexTexCoord = texCoord;\n"
   "}\n";
@@ -556,9 +614,7 @@ GLuint createProgram(void)
     glAttachShader(program, fragmentShader);
 
     glBindAttribLocation(program, 0, "position");
-
     glBindAttribLocation(program, 1, "normal");
-
     glBindAttribLocation(program, 2, "texCoord");
 
     glLinkProgram(program);
@@ -595,7 +651,7 @@ GLuint createProgram(void)
 }
 
 // draw ground
-void draw_plane(Mat4 *model, Mat4 *projection)
+void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection)
 {
     glUseProgram(program);
 
@@ -617,6 +673,8 @@ void draw_plane(Mat4 *model, Mat4 *projection)
         GL_FALSE,
         projection->m
     );
+
+    glUniformMatrix4fv(viewUniform, 1, GL_FALSE, view->m);    
 
     glBindBuffer(GL_ARRAY_BUFFER, planeVertexBuffer);
 
@@ -658,7 +716,7 @@ void draw_plane(Mat4 *model, Mat4 *projection)
 }
 
 // Draw OBJ model
-void draw_model(Mat4 *model, Mat4 *projection) {
+void draw_model(Mat4 *model, Mat4 *view, Mat4 *projection) {
   
     glUseProgram(program);
 
@@ -666,10 +724,9 @@ void draw_model(Mat4 *model, Mat4 *projection) {
     glBindTexture(GL_TEXTURE_2D, texture);
 
     glUniform1i(textureUniform,	0);
-
     glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
-
     glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projection->m);
+    glUniformMatrix4fv(viewUniform, 1, GL_FALSE, view->m);    
 
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
 
@@ -783,6 +840,7 @@ int main(int argc, char* argv[]) {
   matrixUniform = glGetUniformLocation(program, "modelMatrix");
   projectionUniform = glGetUniformLocation(program, "projectionMatrix");
   textureUniform = glGetUniformLocation(program, "textureSampler");
+  viewUniform = glGetUniformLocation(program, "viewMatrix");  
   
   int running = 1;
 
@@ -941,17 +999,23 @@ int main(int argc, char* argv[]) {
     // keyboard -> movement
     const Uint8* keyboard = SDL_GetKeyboardState(NULL);
     if (keyboard[SDL_SCANCODE_W]) {
-      playerZ -= 0.5 * deltaTime;
+      playerZ -= PLAYER_SPEED * deltaTime;
     }
     if (keyboard[SDL_SCANCODE_S]) {
-      playerZ += 0.5 * deltaTime;
+      playerZ += PLAYER_SPEED * deltaTime;
     }
     if (keyboard[SDL_SCANCODE_A]) {
-      playerX -= 0.5 * deltaTime;
+      playerX -= PLAYER_SPEED * deltaTime;
     }
     if (keyboard[SDL_SCANCODE_D]) {
-      playerX += 0.5 * deltaTime;
+      playerX += PLAYER_SPEED * deltaTime;
     }
+
+    // update camera based on player
+    Vec3 cameraPosition = {playerX, playerY + 1.0f, playerZ + 2.0f};
+    Vec3 cameraTarget = {playerX, playerY, playerZ};
+    Vec3 cameraUp = {0.0f, 1.0f, 0.0f};
+    Mat4 view = mat4_look_at(cameraPosition, cameraTarget, cameraUp);
 
     // update Rotation
     angle += rotationSpeed * deltaTime;
@@ -961,10 +1025,12 @@ int main(int argc, char* argv[]) {
 
     // calculate matrices
     Mat4 rotationX = mat4_rotation_x((float)(angle * PI / 180.0));
-    Mat4 rotationY = mat4_rotation_y((float)(angle * PI / 180.0));    
+    Mat4 rotationY = mat4_rotation_y((float)(angle * PI / 180.0));
     Mat4 rotation = mat4_multiply(rotationY, rotationX);
+    
     //    Mat4 translation = mat4_translation(0.0f, 0.0f, CAMERA_DISTANCE);
-    Mat4 translation = mat4_translation(playerX, playerY, playerZ + CAMERA_DISTANCE);    
+    //    Mat4 translation = mat4_translation(playerX, playerY, playerZ + CAMERA_DISTANCE);
+    Mat4 translation = mat4_translation(playerX, playerY, playerZ);    
     Mat4 model = mat4_multiply(translation, rotation);
 
     Mat4 planeTranslation = mat4_translation(
@@ -978,10 +1044,10 @@ int main(int argc, char* argv[]) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
     // draw ground
-    draw_plane(&planeTranslation, &projection);
+    draw_plane(&planeTranslation, &view, &projection);
 
     // Draw OBJ
-    draw_model(&model, &projection);
+    draw_model(&model, &view, &projection);
 
     // Display frame
     SDL_GL_SwapWindow(window);
