@@ -774,12 +774,15 @@ void draw_model(Mat4 *model, Mat4 *view, Mat4 *projection) {
 int main(int argc, char* argv[]) {
 
   // init sdl2
-  if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+  if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS) != 0) {
     fprintf(stderr,
 	    "SDL_Init failed: %s\n",
 	    SDL_GetError());
     return 1;
   }
+
+  printf("SDL video driver: %s\n",
+       SDL_GetCurrentVideoDriver());
 
   // don't show the mouse cursor
   SDL_ShowCursor(SDL_DISABLE);
@@ -806,6 +809,11 @@ int main(int argc, char* argv[]) {
     SDL_Quit();
     return 1;
   }
+
+  int numKeys;
+  SDL_GetKeyboardState(&numKeys);
+  printf("Number of keys: %d\n", numKeys);
+  printf("Num joysticks: %d\n", SDL_NumJoysticks());
 
   SDL_GLContext context = SDL_GL_CreateContext(window);
   if (!context) {
@@ -965,11 +973,26 @@ int main(int argc, char* argv[]) {
 
   glBufferData(GL_ARRAY_BUFFER, sizeof(plane_vertices), plane_vertices, GL_STATIC_DRAW);
 
+  int width;
+  int height;
 
-  Mat4 projection = mat4_perspective(60.0f * PI / 180.0f,
+  SDL_GL_GetDrawableSize(window, &width, &height);
+
+  glViewport(0, 0, width, height);
+
+  float aspect = (float)width / (float)height;
+
+  Mat4 projection = mat4_perspective(
+				     60.0f * PI / 180.0f,
+				     aspect,
+				     0.1f,
+				     100.0f
+				     );
+
+  /*  Mat4 projection = mat4_perspective(60.0f * PI / 180.0f,
 				     (float)WINDOW_WIDTH / WINDOW_HEIGHT,
 				     0.1f,
-				     100.0f);
+				     100.0f); */
 
   // Timing
   double previousTime = getTime();
@@ -1001,8 +1024,18 @@ int main(int argc, char* argv[]) {
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT)
 	running = 0;
-      //      if (event.type == SDL_KEYDOWN)
-      //	running = 0;
+      if (event.type == SDL_KEYDOWN) {
+        printf("Key pressed: %s\n",
+               SDL_GetKeyName(event.key.keysym.sym));
+	if (event.key.keysym.sym == SDLK_ESCAPE) {
+	  running = 0;
+	}
+      }
+
+      if (event.type == SDL_KEYUP) {
+        printf("Key released: %s\n",
+               SDL_GetKeyName(event.key.keysym.sym));
+      }      
     }
 
     // keyboard -> movement
