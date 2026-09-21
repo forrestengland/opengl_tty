@@ -43,6 +43,13 @@ GLint projectionUniform;
 GLint textureUniform;
 GLint viewUniform;
 
+GLuint hudProgram;
+GLuint hudVertexBuffer;
+
+GLint hudPositionAttribute;
+GLint hudScreenSizeUniform;
+GLint hudColorUniform;
+
 // number of vertices to send to glDrawArrays()
 int draw_vertex_count = 0;
 
@@ -567,6 +574,26 @@ const char *fragmentShaderSource =
   "    );\n"
   "}\n";
 
+const char *hudVertexShaderSource =
+    "attribute vec2 position;\n"
+    "uniform vec2 screenSize;\n"
+    "\n"
+    "void main()\n"
+    "{\n"
+    "    vec2 ndc = (position / screenSize) * 2.0 - 1.0;\n"
+    "\n"
+    "    gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);\n"
+    "}\n";
+
+const char *hudFragmentShaderSource =
+    "precision mediump float;\n"
+    "uniform vec4 color;\n"
+    "\n"
+    "void main()\n"
+    "{\n"
+    "    gl_FragColor = color;\n"
+    "}\n";
+
 GLuint compileShader(GLenum type, const char *source)
 {
     GLuint shader = glCreateShader(type);
@@ -657,6 +684,70 @@ GLuint createProgram(void)
     return program;
 }
 
+GLuint createHudProgram(void)
+{
+    GLuint vertexShader =
+        compileShader(
+            GL_VERTEX_SHADER,
+            hudVertexShaderSource
+        );
+
+    GLuint fragmentShader =
+        compileShader(
+            GL_FRAGMENT_SHADER,
+            hudFragmentShaderSource
+        );
+
+    if (!vertexShader || !fragmentShader)
+        return 0;
+
+    GLuint program = glCreateProgram();
+
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
+
+    glBindAttribLocation(
+        program,
+        0,
+        "position"
+    );
+
+    glLinkProgram(program);
+
+    GLint success;
+
+    glGetProgramiv(
+        program,
+        GL_LINK_STATUS,
+        &success
+    );
+
+    if (!success) {
+        char log[512];
+
+        glGetProgramInfoLog(
+            program,
+            sizeof(log),
+            NULL,
+            log
+        );
+
+        fprintf(
+            stderr,
+            "HUD program linking failed:\n%s\n",
+            log
+        );
+
+        glDeleteProgram(program);
+        program = 0;
+    }
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return program;
+}
+
 // draw ground
 void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection)
 {
@@ -720,6 +811,87 @@ void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection)
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
     glDisableVertexAttribArray(2);
+}
+
+void draw_hud(
+    int screenWidth,
+    int screenHeight
+)
+{
+    float rect[] = {
+         10.0f, 10.0f,
+        110.0f, 10.0f,
+        110.0f, 60.0f,
+
+         10.0f, 10.0f,
+        110.0f, 60.0f,
+         10.0f, 60.0f
+    };
+
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+
+    glUseProgram(hudProgram);
+
+    /*
+     * Upload rectangle vertices.
+     */
+    glBindBuffer(GL_ARRAY_BUFFER, hudVertexBuffer);
+
+    glBufferData(
+        GL_ARRAY_BUFFER,
+        sizeof(rect),
+        rect,
+        GL_DYNAMIC_DRAW
+    );
+
+    /*
+     * Position attribute.
+     */
+    glEnableVertexAttribArray(hudPositionAttribute);
+
+    glVertexAttribPointer(
+        hudPositionAttribute,
+        2,
+        GL_FLOAT,
+        GL_FALSE,
+        2 * sizeof(float),
+        (void *)0
+    );
+
+    /*
+     * Tell the shader how large the screen is.
+     */
+    glUniform2f(
+        hudScreenSizeUniform,
+        (float)screenWidth,
+        (float)screenHeight
+    );
+
+    /*
+     * Rectangle color.
+     */
+    glUniform4f(
+        hudColorUniform,
+        1.0f,
+        1.0f,
+        1.0f,
+        1.0f
+    );
+
+    /*
+     * Draw two triangles = rectangle.
+     */
+    glDrawArrays(
+        GL_TRIANGLES,
+        0,
+        6
+    );
+
+    glDisableVertexAttribArray(hudPositionAttribute);
+
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
 }
 
 // Draw OBJ model
@@ -855,7 +1027,40 @@ int main(int argc, char* argv[]) {
   matrixUniform = glGetUniformLocation(program, "modelMatrix");
   projectionUniform = glGetUniformLocation(program, "projectionMatrix");
   textureUniform = glGetUniformLocation(program, "textureSampler");
-  viewUniform = glGetUniformLocation(program, "viewMatrix");  
+  viewUniform = glGetUniformLocation(program, "viewMatrix");
+
+  hudProgram = createHudProgram();
+
+  if (!hudProgram) {
+    fprintf(stderr, "Failed to create HUD shader program\n");
+
+    SDL_GL_DeleteContext(context);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+
+    return 1;
+  }
+
+  hudPositionAttribute =
+    glGetAttribLocation(
+			hudProgram,
+			"position"
+			);
+
+  hudScreenSizeUniform =
+    glGetUniformLocation(
+			 hudProgram,
+			 "screenSize"
+			 );
+
+  hudColorUniform =
+    glGetUniformLocation(
+			 hudProgram,
+			 "color"
+			 );
+
+  // hud buffer
+  glGenBuffers(1, &hudVertexBuffer);
   
   int running = 1;
 
@@ -1110,6 +1315,9 @@ int main(int argc, char* argv[]) {
 
     // Draw OBJ
     draw_model(&model, &view, &projection);
+
+    // draw hud
+    draw_hud(width, height);
 
     // Display frame
     SDL_GL_SwapWindow(window);
