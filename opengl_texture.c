@@ -46,9 +46,16 @@ GLint viewUniform;
 // number of vertices to send to glDrawArrays()
 int draw_vertex_count = 0;
 
+float playerVelocityY = 0.0f;
+
+const float GRAVITY = -9.8f;
+const float JUMP_VELOCITY = 5.0f;
+const float GROUND_Y = -0.25f;
+const float PLAYER_HALF_HEIGHT = 0.2f;
+
 // player coords
 float playerX = 0.0f;
-float playerY = 0.5f;
+float playerY = GROUND_Y + PLAYER_HALF_HEIGHT;
 float playerZ = 0.0f;
 
 // Basic 3D types
@@ -971,6 +978,8 @@ int main(int argc, char* argv[]) {
   int frameCount = 0;
   double fpsTimer = 0.0;
 
+  int jumpWasDown = 0;
+
   // Main loop
   while (running) {
 
@@ -1009,6 +1018,26 @@ int main(int argc, char* argv[]) {
     }
     if (keyboard[SDL_SCANCODE_D]) {
       playerX += PLAYER_SPEED * deltaTime;
+    }
+
+    // jump
+    int jumpDown = keyboard[SDL_SCANCODE_SPACE];
+    if (jumpDown && !jumpWasDown) {
+      float groundPlayerY = GROUND_Y + PLAYER_HALF_HEIGHT;
+      if (playerY <= groundPlayerY + 0.001f) {
+	playerVelocityY = JUMP_VELOCITY;
+      }
+    }
+    jumpWasDown = jumpDown;
+
+    // gravity
+    playerVelocityY += GRAVITY * deltaTime;
+    playerY += playerVelocityY * deltaTime;
+    float groundPlayerY = GROUND_Y + PLAYER_HALF_HEIGHT;
+
+    if (playerY < groundPlayerY) {
+      playerY = groundPlayerY;
+      playerVelocityY = 0.0f;
     }
 
     // update camera based on player
