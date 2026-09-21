@@ -564,57 +564,27 @@ GLuint createProgram(void)
 }
 
 // Draw OBJ model
-void draw_model(Mat4 *model, Mat4 *projection)
-{
+void draw_model(Mat4 *model, Mat4 *projection) {
+  
     glUseProgram(program);
 
-    glUniformMatrix4fv(
-        matrixUniform,
-        1,
-        GL_FALSE,
-        model->m
-    );
+    glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
 
-    glUniformMatrix4fv(
-        projectionUniform,
-        1,
-        GL_FALSE,
-        projection->m
-    );
+    glUniformMatrix4fv(projectionUniform, 1, GL_FALSE, projection->m);
 
     glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
-
-    /*
-     * Each vertex is:
-     *
-     *     x y z nx ny nz
-     *
-     * 6 floats total.
-     */
 
     // Position
     glEnableVertexAttribArray(0);
 
-    glVertexAttribPointer(
-        0,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        6 * sizeof(float),
-        (void *)0
-    );
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE,
+			  8 * sizeof(float), (void *)0);
 
     // Normal
     glEnableVertexAttribArray(1);
 
-    glVertexAttribPointer(
-        1,
-        3,
-        GL_FLOAT,
-        GL_FALSE,
-        6 * sizeof(float),
-        (void *)(3 * sizeof(float))
-    );
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE,
+			  8 * sizeof(float), (void *)(3 * sizeof(float)));
 
     if (WIREFRAME) {
       for (int i = 0; i < draw_vertex_count; i += 3) {
@@ -761,8 +731,7 @@ int main(int argc, char* argv[]) {
   // send obj faces to gpu
   draw_vertex_count = face_count * 3;
 
-  float *model_vertices =
-    malloc(draw_vertex_count * 6 * sizeof(float));
+  float *model_vertices = malloc(draw_vertex_count * 8 * sizeof(float));
 
   if (!model_vertices) {
     fprintf(stderr, "Failed to allocate model vertices\n");
@@ -781,6 +750,7 @@ int main(int argc, char* argv[]) {
 
       Vec3 *v = &vertices[face->v[j]];
       Vec3 *n = &normals[face->n[j]];
+      Vec2 *t = &texcoords[face->t[j]];
 
       // position
       model_vertices[index++] = v->x * scale;
@@ -791,6 +761,10 @@ int main(int argc, char* argv[]) {
       model_vertices[index++] = n->x;
       model_vertices[index++] = n->y;
       model_vertices[index++] = n->z;
+
+      // texture coordinates
+      model_vertices[index++] = t->u;
+      model_vertices[index++] = t->v;      
     }
   }  
 
@@ -798,12 +772,8 @@ int main(int argc, char* argv[]) {
 
   glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
 
-  glBufferData(
-	       GL_ARRAY_BUFFER,
-	       draw_vertex_count * 6 * sizeof(float),
-	       model_vertices,
-	       GL_STATIC_DRAW
-	       );
+  glBufferData(GL_ARRAY_BUFFER, draw_vertex_count * 8 * sizeof(float),
+	       model_vertices, GL_STATIC_DRAW);
 
   free(model_vertices);
 
