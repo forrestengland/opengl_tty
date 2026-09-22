@@ -49,10 +49,11 @@ GLint textureUniform;
 // 'hud' stuff
 GLuint hudProgram;
 GLuint hudVertexBuffer;
+GLuint hudTexture;
+GLint hudTextureUniform;
 GLint hudPositionAttribute;
 GLint hudTexCoordAttribute;
 GLint hudScreenSizeUniform;
-GLint hudColorUniform;
 
 // number of vertices to send to glDrawArrays() for player model
 int draw_vertex_count = 0;
@@ -744,7 +745,7 @@ void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection)
     glDisableVertexAttribArray(2);
 }
 
-void draw_hud(int screenWidth, int screenHeight, GLuint textTexture) {
+void draw_hud(int screenWidth, int screenHeight) {
 
   float rect[] = {
     10.0f, 10.0f,   0.0f, 0.0f,
@@ -762,12 +763,9 @@ void draw_hud(int screenWidth, int screenHeight, GLuint textTexture) {
   glUseProgram(hudProgram);
 
   glActiveTexture(GL_TEXTURE0);
-  glBindTexture(GL_TEXTURE_2D, textTexture);
+  glBindTexture(GL_TEXTURE_2D, hudTexture);
   
-  GLint textureUniform =
-    glGetUniformLocation(hudProgram, "textureSampler");
-
-  glUniform1i(textureUniform, 0);  
+  glUniform1i(hudTextureUniform, 0);  
 
   // Upload rectangle vertices.
   glBindBuffer(GL_ARRAY_BUFFER, hudVertexBuffer);
@@ -788,8 +786,6 @@ void draw_hud(int screenWidth, int screenHeight, GLuint textTexture) {
 
   // Tell the shader how large the screen is.
   glUniform2f(hudScreenSizeUniform, (float)screenWidth, (float)screenHeight);
-  // Rectangle color.
-  glUniform4f(hudColorUniform, 1.0f, 1.0f, 1.0f, 1.0f);
   // Draw two triangles = rectangle.
   glDrawArrays(GL_TRIANGLES, 0, 6);
   glDisableVertexAttribArray(hudPositionAttribute);
@@ -831,6 +827,55 @@ void draw_model(Mat4 *model, Mat4 *view, Mat4 *projection) {
 
   glDisableVertexAttribArray(0);
   glDisableVertexAttribArray(1);
+}
+
+void updateHudTexture(int fps, TTF_Font* font) {
+
+  // prepare text display
+    SDL_Color white = {255, 255, 255, 255};
+
+    char fpstext[255];
+    snprintf(fpstext, 255, "FPS: %d", fps);
+    
+    SDL_Surface *textSurface =
+      TTF_RenderText_Blended(font, fpstext, white);
+
+    if (!textSurface) {
+      fprintf(stderr, "Failed to render text: %s\n", TTF_GetError());
+    }
+
+    SDL_Surface *rgbaSurface =
+    SDL_ConvertSurfaceFormat(
+			     textSurface,
+			     SDL_PIXELFORMAT_RGBA32,
+			     0
+			     );
+
+    SDL_FreeSurface(textSurface);    
+
+    if (!rgbaSurface) {
+      fprintf(stderr, "Failed to convert text surface: %s\n",
+	      SDL_GetError());
+      return;
+    }
+
+    glBindTexture(GL_TEXTURE_2D, hudTexture);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    glTexImage2D(
+		 GL_TEXTURE_2D,
+		 0,
+		 GL_RGBA,
+		 rgbaSurface->w,
+		 rgbaSurface->h,
+		 0,
+		 GL_RGBA,
+		 GL_UNSIGNED_BYTE,
+		 rgbaSurface->pixels
+		 );
+
+    SDL_FreeSurface(rgbaSurface);    
 }
 
 // main program entry
@@ -943,12 +988,42 @@ int main(int argc, char* argv[]) {
 
   hudScreenSizeUniform = glGetUniformLocation(hudProgram, "screenSize");
 
-  hudColorUniform =
-    glGetUniformLocation(hudProgram, "color");
-
   // hud buffer
   glGenBuffers(1, &hudVertexBuffer);
+
+  // hud text texture
+  glGenTextures(1, &hudTexture);
+
+  glBindTexture(GL_TEXTURE_2D, hudTexture);
+
+  glTexParameteri(
+		  GL_TEXTURE_2D,
+		  GL_TEXTURE_MIN_FILTER,
+		  GL_LINEAR
+		  );
+
+  glTexParameteri(
+		  GL_TEXTURE_2D,
+		  GL_TEXTURE_MAG_FILTER,
+		  GL_LINEAR
+		  );
+
+  glTexParameteri(
+		  GL_TEXTURE_2D,
+		  GL_TEXTURE_WRAP_S,
+		  GL_CLAMP_TO_EDGE
+		  );
+
+  glTexParameteri(
+		  GL_TEXTURE_2D,
+		  GL_TEXTURE_WRAP_T,
+		  GL_CLAMP_TO_EDGE
+		  );
   
+  hudTextureUniform =
+    glGetUniformLocation(hudProgram, "textureSampler");
+  
+  // running
   int running = 1;
 
   // load image for texture
@@ -1086,6 +1161,7 @@ int main(int argc, char* argv[]) {
       fps = frameCount;
       frameCount = 0;
       fpsTimer = 0.0;
+      updateHudTexture(fps, font);
     }
 
     // Events
@@ -1172,79 +1248,6 @@ int main(int argc, char* argv[]) {
 					     -3.0f
 					     );
 
-    // prepare text display
-    SDL_Color white = {255, 255, 255, 255};
-
-    char fpstext[255];
-    snprintf(fpstext, 255, "FPS: %d", fps);
-    
-    SDL_Surface *textSurface =
-      TTF_RenderText_Blended(font, fpstext, white);
-
-    if (!textSurface) {
-      fprintf(stderr, "Failed to render text: %s\n", TTF_GetError());
-    }
-
-    SDL_Surface *rgbaSurface =
-    SDL_ConvertSurfaceFormat(
-			     textSurface,
-			     SDL_PIXELFORMAT_RGBA32,
-			     0
-			     );
-
-    SDL_FreeSurface(textSurface);    
-
-    if (!rgbaSurface) {
-      fprintf(stderr, "Failed to convert text surface: %s\n",
-	      SDL_GetError());
-      continue;
-    }
-
-    GLuint textTexture;
-
-    glGenTextures(1, &textTexture);
-    glBindTexture(GL_TEXTURE_2D, textTexture);    
-
-    glTexParameteri(
-		    GL_TEXTURE_2D,
-		    GL_TEXTURE_MIN_FILTER,
-		    GL_LINEAR
-		    );
-
-    glTexParameteri(
-		    GL_TEXTURE_2D,
-		    GL_TEXTURE_MAG_FILTER,
-		    GL_LINEAR
-		    );
-
-    glTexParameteri(
-		    GL_TEXTURE_2D,
-		    GL_TEXTURE_WRAP_S,
-		    GL_CLAMP_TO_EDGE
-		    );
-
-    glTexParameteri(
-		    GL_TEXTURE_2D,
-		    GL_TEXTURE_WRAP_T,
-		    GL_CLAMP_TO_EDGE
-		    );
-
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    glTexImage2D(
-		 GL_TEXTURE_2D,
-		 0,
-		 GL_RGBA,
-		 rgbaSurface->w,
-		 rgbaSurface->h,
-		 0,
-		 GL_RGBA,
-		 GL_UNSIGNED_BYTE,
-		 rgbaSurface->pixels
-		 );
-
-    SDL_FreeSurface(rgbaSurface);    
-
     // Clear frame
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1256,7 +1259,7 @@ int main(int argc, char* argv[]) {
     draw_model(&model, &view, &projection);
 
     // draw hud
-    draw_hud(width, height, textTexture);
+    draw_hud(width, height);
 
     // Display frame
     SDL_GL_SwapWindow(window);
@@ -1267,6 +1270,15 @@ int main(int argc, char* argv[]) {
   free(vertices);
   free(normals);
   free(faces);
+
+  glDeleteTextures(1, &texture);
+  glDeleteBuffers(1, &vertexBuffer);
+  glDeleteBuffers(1, &planeVertexBuffer);
+  glDeleteProgram(program);
+ 
+  glDeleteTextures(1, &hudTexture);
+  glDeleteBuffers(1, &hudVertexBuffer);
+  glDeleteProgram(hudProgram);
 
   SDL_GL_DeleteContext(context);
   SDL_DestroyWindow(window);
