@@ -6,6 +6,7 @@
 #include <string.h>
 // sdl
 #include <SDL2/SDL.h>
+#include <SDL2/SDL_ttf.h>
 // opengl
 #include <GLES2/gl2.h>
 // stb image for loading bitmap textures
@@ -49,6 +50,7 @@ GLint textureUniform;
 GLuint hudProgram;
 GLuint hudVertexBuffer;
 GLint hudPositionAttribute;
+GLint hudTexCoordAttribute;
 GLint hudScreenSizeUniform;
 GLint hudColorUniform;
 
@@ -585,23 +587,27 @@ const char *fragmentShaderSource =
 // hud vertex shader program
 const char *hudVertexShaderSource =
     "attribute vec2 position;\n"
+    "attribute vec2 texCoord;\n"
     "uniform vec2 screenSize;\n"
+    "varying vec2 vertexTexCoord;\n"
     "\n"
     "void main()\n"
     "{\n"
     "    vec2 ndc = (position / screenSize) * 2.0 - 1.0;\n"
     "\n"
     "    gl_Position = vec4(ndc.x, -ndc.y, 0.0, 1.0);\n"
+    "    vertexTexCoord = texCoord;\n"
     "}\n";
 
 // hud fragment shader program
 const char *hudFragmentShaderSource =
     "precision mediump float;\n"
-    "uniform vec4 color;\n"
+    "varying vec2 vertexTexCoord;\n"
+    "uniform sampler2D textureSampler;\n"
     "\n"
     "void main()\n"
     "{\n"
-    "    gl_FragColor = color;\n"
+    "    gl_FragColor = texture2D(textureSampler, vertexTexCoord);\n"
     "}\n";
 
 // compile a shader program
@@ -686,6 +692,7 @@ GLuint createHudProgram(void)
     glAttachShader(program, fragmentShader);
 
     glBindAttribLocation(program, 0, "position");
+    glBindAttribLocation(program, 1, "texCoord");    
 
     glLinkProgram(program);
 
@@ -737,27 +744,47 @@ void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection)
     glDisableVertexAttribArray(2);
 }
 
-void draw_hud(int screenWidth, int screenHeight) {
-  
-  float rect[] = {
-    10.0f, 10.0f,
-    110.0f, 10.0f,
-    110.0f, 60.0f,
+void draw_hud(int screenWidth, int screenHeight, GLuint textTexture) {
 
-    10.0f, 10.0f,
-    110.0f, 60.0f,
-    10.0f, 60.0f
+  float rect[] = {
+    10.0f, 10.0f,   0.0f, 0.0f,
+    110.0f, 10.0f,  1.0f, 0.0f,
+    110.0f, 60.0f,  1.0f, 1.0f,
+
+    10.0f, 10.0f,   0.0f, 0.0f,
+    110.0f, 60.0f,  1.0f, 1.0f,
+    10.0f, 60.0f,   0.0f, 1.0f
   };
 
   glDisable(GL_DEPTH_TEST);
   glDepthMask(GL_FALSE);
+  
   glUseProgram(hudProgram);
+
+  glActiveTexture(GL_TEXTURE0);
+  glBindTexture(GL_TEXTURE_2D, textTexture);
+  
+  GLint textureUniform =
+    glGetUniformLocation(hudProgram, "textureSampler");
+
+  glUniform1i(textureUniform, 0);  
+
   // Upload rectangle vertices.
   glBindBuffer(GL_ARRAY_BUFFER, hudVertexBuffer);
   glBufferData(GL_ARRAY_BUFFER, sizeof(rect), rect, GL_DYNAMIC_DRAW);
+
   // Position attribute.
   glEnableVertexAttribArray(hudPositionAttribute);
-  glVertexAttribPointer(hudPositionAttribute, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void *)0);
+  glVertexAttribPointer(hudPositionAttribute, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float), (void *)0);
+  glEnableVertexAttribArray(hudTexCoordAttribute);
+  glVertexAttribPointer(
+			hudTexCoordAttribute,
+			2,
+			GL_FLOAT,
+			GL_FALSE,
+			4 * sizeof(float),
+			(void *)(2 * sizeof(float))
+			);
 
   // Tell the shader how large the screen is.
   glUniform2f(hudScreenSizeUniform, (float)screenWidth, (float)screenHeight);
@@ -768,6 +795,8 @@ void draw_hud(int screenWidth, int screenHeight) {
   glDisableVertexAttribArray(hudPositionAttribute);
   glDepthMask(GL_TRUE);
   glEnable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 // Draw OBJ model
@@ -812,6 +841,15 @@ int main(int argc, char* argv[]) {
     fprintf(stderr,
 	    "SDL_Init failed: %s\n",
 	    SDL_GetError());
+    return 1;
+  }
+  if (TTF_Init() != 0) {
+    fprintf(stderr, "TTF_Init failed: %s\n", TTF_GetError());
+    return 1;
+  }
+  TTF_Font *font = TTF_OpenFont("SuperMaples-2vR2w.ttf", 24);
+  if (!font) {
+    fprintf(stderr, "failed to load font '%s'\n", TTF_GetError());
     return 1;
   }
 
@@ -899,6 +937,9 @@ int main(int argc, char* argv[]) {
 
   hudPositionAttribute =
     glGetAttribLocation(hudProgram, "position");
+
+  hudTexCoordAttribute =
+    glGetAttribLocation(hudProgram, "texCoord");  
 
   hudScreenSizeUniform = glGetUniformLocation(hudProgram, "screenSize");
 
@@ -1026,6 +1067,7 @@ int main(int argc, char* argv[]) {
   double angleY = 0.0;  
   int frameCount = 0;
   double fpsTimer = 0.0;
+  int fps = 0;
 
   int jumpWasDown = 0;
 
@@ -1041,6 +1083,7 @@ int main(int argc, char* argv[]) {
     fpsTimer += deltaTime;
     if (fpsTimer >= 1.0) {
       printf("FPS: %d\n", frameCount);
+      fps = frameCount;
       frameCount = 0;
       fpsTimer = 0.0;
     }
@@ -1128,7 +1171,80 @@ int main(int argc, char* argv[]) {
 					     -0.25f,
 					     -3.0f
 					     );
+
+    // prepare text display
+    SDL_Color white = {255, 255, 255, 255};
+
+    char fpstext[255];
+    snprintf(fpstext, 255, "FPS: %d", fps);
     
+    SDL_Surface *textSurface =
+      TTF_RenderText_Blended(font, fpstext, white);
+
+    if (!textSurface) {
+      fprintf(stderr, "Failed to render text: %s\n", TTF_GetError());
+    }
+
+    SDL_Surface *rgbaSurface =
+    SDL_ConvertSurfaceFormat(
+			     textSurface,
+			     SDL_PIXELFORMAT_RGBA32,
+			     0
+			     );
+
+    SDL_FreeSurface(textSurface);    
+
+    if (!rgbaSurface) {
+      fprintf(stderr, "Failed to convert text surface: %s\n",
+	      SDL_GetError());
+      continue;
+    }
+
+    GLuint textTexture;
+
+    glGenTextures(1, &textTexture);
+    glBindTexture(GL_TEXTURE_2D, textTexture);    
+
+    glTexParameteri(
+		    GL_TEXTURE_2D,
+		    GL_TEXTURE_MIN_FILTER,
+		    GL_LINEAR
+		    );
+
+    glTexParameteri(
+		    GL_TEXTURE_2D,
+		    GL_TEXTURE_MAG_FILTER,
+		    GL_LINEAR
+		    );
+
+    glTexParameteri(
+		    GL_TEXTURE_2D,
+		    GL_TEXTURE_WRAP_S,
+		    GL_CLAMP_TO_EDGE
+		    );
+
+    glTexParameteri(
+		    GL_TEXTURE_2D,
+		    GL_TEXTURE_WRAP_T,
+		    GL_CLAMP_TO_EDGE
+		    );
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    glTexImage2D(
+		 GL_TEXTURE_2D,
+		 0,
+		 GL_RGBA,
+		 rgbaSurface->w,
+		 rgbaSurface->h,
+		 0,
+		 GL_RGBA,
+		 GL_UNSIGNED_BYTE,
+		 rgbaSurface->pixels
+		 );
+
+    SDL_FreeSurface(rgbaSurface);    
+
     // Clear frame
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -1140,7 +1256,7 @@ int main(int argc, char* argv[]) {
     draw_model(&model, &view, &projection);
 
     // draw hud
-    draw_hud(width, height);
+    draw_hud(width, height, textTexture);
 
     // Display frame
     SDL_GL_SwapWindow(window);
