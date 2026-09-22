@@ -20,6 +20,7 @@
 #include "f3_vec.h"
 #include "f3_mat.h"
 #include "f3_obj.h"
+#include "player.h"
 
 // texture map image info
 int image_width, image_height, image_channels;
@@ -29,9 +30,6 @@ unsigned char* image_data = 0;
 #define SCREEN_W 640
 #define SCREEN_H 480
 
-// speed player moves at
-#define PLAYER_SPEED 2.0
-
 // wireframe or solid display for player object
 #define WIREFRAME 0
 
@@ -40,10 +38,6 @@ unsigned char* image_data = 0;
 
 // texture image
 #define IMAGEFILE "cube_texture.bmp"
-
-// rotation speed of player object
-#define ROTATION_SPEED_X 5.0
-#define ROTATION_SPEED_Y 15.0
 
 // pi
 #define PI 3.1415926535
@@ -70,23 +64,6 @@ GLint hudTextureUniform;
 GLint hudPositionAttribute;
 GLint hudTexCoordAttribute;
 GLint hudScreenSizeUniform;
-
-// number of vertices to send to glDrawArrays() for player model
-// int draw_vertex_count = 0;
-
-// player velocity in vertical y direction (gravity / jumping)
-float playerVelocityY = 0.0f;
-
-// constants for gravity and jumping
-const float GRAVITY = -9.8f;
-const float JUMP_VELOCITY = 5.0f;
-const float GROUND_Y = -0.25f;
-const float PLAYER_HALF_HEIGHT = 0.2f;
-
-// player coordinates
-float playerX = 0.0f;
-float playerY = GROUND_Y + PLAYER_HALF_HEIGHT;
-float playerZ = 0.0f;
 
 // Time
 double getTime() {
@@ -438,6 +415,9 @@ void updateHudTexture(int fps, TTF_Font* font) {
 // main program entry
 int main(int argc, char* argv[]) {
 
+  player p;
+  player_init(&p);
+
   f3_obj player_obj;
   f3_obj_init(&player_obj);
   player_obj.filename = OBJFILE;
@@ -556,33 +536,11 @@ int main(int argc, char* argv[]) {
   glGenTextures(1, &hudTexture);
 
   glBindTexture(GL_TEXTURE_2D, hudTexture);
-
-  glTexParameteri(
-		  GL_TEXTURE_2D,
-		  GL_TEXTURE_MIN_FILTER,
-		  GL_LINEAR
-		  );
-
-  glTexParameteri(
-		  GL_TEXTURE_2D,
-		  GL_TEXTURE_MAG_FILTER,
-		  GL_LINEAR
-		  );
-
-  glTexParameteri(
-		  GL_TEXTURE_2D,
-		  GL_TEXTURE_WRAP_S,
-		  GL_CLAMP_TO_EDGE
-		  );
-
-  glTexParameteri(
-		  GL_TEXTURE_2D,
-		  GL_TEXTURE_WRAP_T,
-		  GL_CLAMP_TO_EDGE
-		  );
-  
-  hudTextureUniform =
-    glGetUniformLocation(hudProgram, "textureSampler");
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+  hudTextureUniform = glGetUniformLocation(hudProgram, "textureSampler");
   
   // running
   int running = 1;
@@ -609,15 +567,6 @@ int main(int argc, char* argv[]) {
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image_width, image_height, 0,
 	       GL_RGB, GL_UNSIGNED_BYTE, image_data);
 
-  // Load player OBJ
-  /*  char* filename = OBJFILE; // default
-  if (!load_obj(filename)) {
-    return 1;
-  }
-  printf("Texture coordinates: %d\n", texcoord_count);
-  for (int i = 0; i < texcoord_count; i++) {
-    printf("%d: u=%f v=%f\n", i, texcoords[i].u, texcoords[i].v);
-    } */
   if (!f3_obj_load(&player_obj)) return 1;
 
   float *model_vertices = f3_obj_model_vertices(&player_obj);
@@ -661,12 +610,7 @@ int main(int argc, char* argv[]) {
 
   float aspect = (float)width / (float)height;
 
-  Mat4 projection = mat4_perspective(
-				     60.0f * PI / 180.0f,
-				     aspect,
-				     0.1f,
-				     100.0f
-				     );
+  Mat4 projection = mat4_perspective(60.0f * PI / 180.0f, aspect, 0.1f, 100.0f);
 
   // Timing
   double previousTime = getTime();
@@ -718,50 +662,42 @@ int main(int argc, char* argv[]) {
     // keyboard -> movement
     const Uint8* keyboard = SDL_GetKeyboardState(NULL);
     if (keyboard[SDL_SCANCODE_W]) {
-      playerZ -= PLAYER_SPEED * deltaTime;
+      player_move_forward(&p, deltaTime);
     }
     if (keyboard[SDL_SCANCODE_S]) {
-      playerZ += PLAYER_SPEED * deltaTime;
+      player_move_backward(&p, deltaTime);
     }
     if (keyboard[SDL_SCANCODE_A]) {
-      playerX -= PLAYER_SPEED * deltaTime;
+      player_move_left(&p, deltaTime);
     }
     if (keyboard[SDL_SCANCODE_D]) {
-      playerX += PLAYER_SPEED * deltaTime;
+      player_move_right(&p, deltaTime);
     }
 
     // jump
     int jumpDown = keyboard[SDL_SCANCODE_SPACE];
     if (jumpDown && !jumpWasDown) {
-      float groundPlayerY = GROUND_Y + PLAYER_HALF_HEIGHT;
-      if (playerY <= groundPlayerY + 0.001f) {
-	playerVelocityY = JUMP_VELOCITY;
+      if (player_can_jump(&p)) {
+	player_jump(&p);
       }
     }
     jumpWasDown = jumpDown;
 
-    // gravity
-    playerVelocityY += GRAVITY * deltaTime;
-    playerY += playerVelocityY * deltaTime;
-    float groundPlayerY = GROUND_Y + PLAYER_HALF_HEIGHT;
-
-    if (playerY < groundPlayerY) {
-      playerY = groundPlayerY;
-      playerVelocityY = 0.0f;
-    }
-
+    // update player y position based on gravity
+    player_do_gravity(&p, deltaTime);
+    
     // update camera based on player
-    Vec3 cameraPosition = {playerX, playerY + 1.0f, playerZ + 2.0f};
-    Vec3 cameraTarget = {playerX, playerY, playerZ};
+    Vec3 cameraPosition = {p.pos_x, p.pos_y + 1.0f, p.pos_z + 2.0f};
+    Vec3 cameraTarget = {p.pos_x, p.pos_y, p.pos_z};
     Vec3 cameraUp = {0.0f, 1.0f, 0.0f};
     Mat4 view = mat4_look_at(cameraPosition, cameraTarget, cameraUp);
 
     // update Rotation
-    angleX += ROTATION_SPEED_X * deltaTime;
+    angleX += p.rot_x * deltaTime;
     if (angleX >= 360.0) {
       angleX -= 360.0;
     }
-    angleY += ROTATION_SPEED_Y * deltaTime;
+    angleY += p.rot_y * deltaTime;
     if (angleY >= 360.0) {
       angleY -= 360.0;
     }
@@ -771,14 +707,10 @@ int main(int argc, char* argv[]) {
     Mat4 rotationY = mat4_rotation_y((float)(angleY * PI / 180.0));
     Mat4 rotation = mat4_multiply(rotationY, rotationX);
     
-    Mat4 translation = mat4_translation(playerX, playerY, playerZ);    
+    Mat4 translation = mat4_translation(p.pos_x, p.pos_y, p.pos_z);    
     Mat4 model = mat4_multiply(translation, rotation);
 
-    Mat4 planeTranslation = mat4_translation(
-					     0.0f,
-					     -0.25f,
-					     -3.0f
-					     );
+    Mat4 planeTranslation = mat4_translation(0.0f, -0.25f, -3.0f);
 
     // Clear frame
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -813,5 +745,5 @@ int main(int argc, char* argv[]) {
   SDL_DestroyWindow(window);
   SDL_Quit();
 
-    return 0;
+  return 0;
 }
