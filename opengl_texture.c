@@ -4,35 +4,48 @@
 #include <time.h>
 #include <math.h>
 #include <string.h>
+
 // sdl
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_ttf.h>
+
 // opengl
 #include <GLES2/gl2.h>
+
 // stb image for loading bitmap textures
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
-// texture image info
+// custom libraries
+#include "f3_vec.h"
+
+// texture map image info
 int image_width, image_height, image_channels;
 unsigned char* image_data = 0;
 
 // requested screen size for desktop
 #define SCREEN_W 640
 #define SCREEN_H 480
+
 // speed player moves at
 #define PLAYER_SPEED 2.0
+
 // wireframe or solid display for player object
 #define WIREFRAME 0
+
 // player object file
 #define OBJFILE "cube.obj"
+
 // texture image
 #define IMAGEFILE "cube_texture.bmp"
+
 // rotation speed of player object
 #define ROTATION_SPEED_X 5.0
 #define ROTATION_SPEED_Y 15.0
+
 // pi
 #define PI 3.1415926535
+
 // show cursor or not
 #define SHOW_CURSOR 0
 
@@ -46,6 +59,7 @@ GLint matrixUniform;
 GLint projectionUniform;
 GLint viewUniform;
 GLint textureUniform;
+
 // 'hud' stuff
 GLuint hudProgram;
 GLuint hudVertexBuffer;
@@ -57,8 +71,10 @@ GLint hudScreenSizeUniform;
 
 // number of vertices to send to glDrawArrays() for player model
 int draw_vertex_count = 0;
+
 // player velocity in vertical y direction (gravity / jumping)
 float playerVelocityY = 0.0f;
+
 // constants for gravity and jumping
 const float GRAVITY = -9.8f;
 const float JUMP_VELOCITY = 5.0f;
@@ -69,19 +85,6 @@ const float PLAYER_HALF_HEIGHT = 0.2f;
 float playerX = 0.0f;
 float playerY = GROUND_Y + PLAYER_HALF_HEIGHT;
 float playerZ = 0.0f;
-
-// Basic 3D types
-typedef struct {
-    float x;
-    float y;
-    float z;
-} Vec3;
-
-// 2d vector for textures
-typedef struct {
-  float u;
-  float v;
-} Vec2;
 
 // 4x4 column major matrix
 typedef struct {
