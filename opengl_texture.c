@@ -36,8 +36,9 @@ unsigned char* image_data = 0;
 // player object file
 #define OBJFILE "cube.obj"
 
-// texture image
+// texture image for ground and player for now
 #define IMAGEFILE "cube_texture.bmp"
+#define GROUND_IMAGEFILE "auvBG.bmp"
 
 // pi
 #define PI 3.1415926535
@@ -46,18 +47,20 @@ unsigned char* image_data = 0;
 #define SHOW_CURSOR 0
 
 // stuff gl needs access to
-GLuint program;
 GLuint vertexBuffer;
 GLuint planeVertexBuffer;
+
 GLuint texture;
+GLuint groundTexture;
+
 GLint positionAttribute;
 GLint matrixUniform;
 GLint projectionUniform;
 GLint viewUniform;
+
 GLint textureUniform;
 
 // 'hud' stuff
-GLuint hudProgram;
 GLuint hudVertexBuffer;
 GLuint hudTexture;
 GLint hudTextureUniform;
@@ -254,13 +257,14 @@ GLuint createHudProgram(void)
 }
 
 // draw ground plane
-void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection)
+void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection, GLuint program)
 {
-    glUseProgram(program);
+
+  glUseProgram(program);
 
     // use the texture
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, texture);
+    glBindTexture(GL_TEXTURE_2D, groundTexture);
 
     glUniform1i(textureUniform, 0);
     glUniformMatrix4fv(matrixUniform, 1, GL_FALSE, model->m);
@@ -279,7 +283,7 @@ void draw_plane(Mat4 *model, Mat4 *view, Mat4 *projection)
     glDisableVertexAttribArray(2);
 }
 
-void draw_hud(int screenWidth, int screenHeight) {
+void draw_hud(int screenWidth, int screenHeight, GLuint hudProgram) {
 
   float rect[] = {
     10.0f, 10.0f,   0.0f, 0.0f,
@@ -330,7 +334,7 @@ void draw_hud(int screenWidth, int screenHeight) {
 }
 
 // Draw OBJ model
-void draw_model(Mat4 *model, Mat4 *view, Mat4 *projection, f3_obj* player_obj) {
+void draw_model(Mat4 *model, Mat4 *view, Mat4 *projection, f3_obj* player_obj, GLuint program) {
   
   glUseProgram(program);
   glActiveTexture(GL_TEXTURE0);
@@ -414,6 +418,9 @@ void updateHudTexture(int fps, TTF_Font* font) {
 
 // main program entry
 int main(int argc, char* argv[]) {
+
+  GLuint program;
+  GLuint hudProgram;
 
   player p;
   player_init(&p);
@@ -521,12 +528,8 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
-  hudPositionAttribute =
-    glGetAttribLocation(hudProgram, "position");
-
-  hudTexCoordAttribute =
-    glGetAttribLocation(hudProgram, "texCoord");  
-
+  hudPositionAttribute = glGetAttribLocation(hudProgram, "position");
+  hudTexCoordAttribute = glGetAttribLocation(hudProgram, "texCoord");  
   hudScreenSizeUniform = glGetUniformLocation(hudProgram, "screenSize");
 
   // hud buffer
@@ -566,20 +569,55 @@ int main(int argc, char* argv[]) {
   glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
   glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, image_width, image_height, 0,
 	       GL_RGB, GL_UNSIGNED_BYTE, image_data);
+  stbi_image_free(image_data);
 
+  int ground_width;
+  int ground_height;
+  int ground_channels;
+
+  unsigned char *ground_data = stbi_load(GROUND_IMAGEFILE, &ground_width, &ground_height,
+					 &ground_channels, 0);
+
+  if (!ground_data) {
+    printf("error loading ground texture '%s'\n", GROUND_IMAGEFILE);
+    return 1;
+  }
+
+  glGenTextures(1, &groundTexture);
+  glBindTexture(GL_TEXTURE_2D, groundTexture);
+
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+  glTexImage2D(GL_TEXTURE_2D,
+	       0,
+	       GL_RGB,
+	       ground_width,
+	       ground_height,
+	       0,
+	       GL_RGB,
+	       GL_UNSIGNED_BYTE,
+	       ground_data
+	       );
+
+  stbi_image_free(ground_data);  
+
+  // load player model .obj
   if (!f3_obj_load(&player_obj)) return 1;
-
+  // get model vertices to send to gpu
   float *model_vertices = f3_obj_model_vertices(&player_obj);
   if (!model_vertices) {
     printf("getting model vertices failed\n");
     return 1;
   }
-
+  // send to gpu
   glGenBuffers(1, &vertexBuffer);
   glBindBuffer(GL_ARRAY_BUFFER, vertexBuffer);
   glBufferData(GL_ARRAY_BUFFER, player_obj.draw_vertex_count * 8 * sizeof(float),
 	       model_vertices, GL_STATIC_DRAW);
-
+  // cleanup
   free(model_vertices);
 
   // create ground plane
@@ -601,15 +639,16 @@ int main(int argc, char* argv[]) {
 
   glBufferData(GL_ARRAY_BUFFER, sizeof(plane_vertices), plane_vertices, GL_STATIC_DRAW);
 
+  // get actual size of window (fullscreen if on console)
   int width;
   int height;
-
   SDL_GL_GetDrawableSize(window, &width, &height);
-
+  // set the viewport
   glViewport(0, 0, width, height);
-
+  // get the aspect ratio
   float aspect = (float)width / (float)height;
 
+  // projection matrix
   Mat4 projection = mat4_perspective(60.0f * PI / 180.0f, aspect, 0.1f, 100.0f);
 
   // Timing
@@ -692,7 +731,7 @@ int main(int argc, char* argv[]) {
     Vec3 cameraUp = {0.0f, 1.0f, 0.0f};
     Mat4 view = mat4_look_at(cameraPosition, cameraTarget, cameraUp);
 
-    // update Rotation
+    // update Rotation of player
     angleX += p.rot_x * deltaTime;
     if (angleX >= 360.0) {
       angleX -= 360.0;
@@ -702,28 +741,30 @@ int main(int argc, char* argv[]) {
       angleY -= 360.0;
     }
 
-    // calculate matrices
+    // calculate rotation matrices for player
     Mat4 rotationX = mat4_rotation_x((float)(angleX * PI / 180.0));
     Mat4 rotationY = mat4_rotation_y((float)(angleY * PI / 180.0));
     Mat4 rotation = mat4_multiply(rotationY, rotationX);
-    
+
+    // translation for player
     Mat4 translation = mat4_translation(p.pos_x, p.pos_y, p.pos_z);    
     Mat4 model = mat4_multiply(translation, rotation);
 
+    // ground plane translation
     Mat4 planeTranslation = mat4_translation(0.0f, -0.25f, -3.0f);
 
-    // Clear frame
+    // Clear the frame
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     
-    // draw ground
-    draw_plane(&planeTranslation, &view, &projection);
+    // draw the ground
+    draw_plane(&planeTranslation, &view, &projection, program);
 
-    // Draw OBJ
-    draw_model(&model, &view, &projection, &player_obj);
+    // draw player model
+    draw_model(&model, &view, &projection, &player_obj, program);
 
     // draw hud
-    draw_hud(width, height);
+    draw_hud(width, height, hudProgram);
 
     // Display frame
     SDL_GL_SwapWindow(window);
@@ -733,6 +774,7 @@ int main(int argc, char* argv[]) {
   f3_obj_cleanup(&player_obj);
 
   glDeleteTextures(1, &texture);
+  glDeleteTextures(1, &groundTexture);  
   glDeleteBuffers(1, &vertexBuffer);
   glDeleteBuffers(1, &planeVertexBuffer);
   glDeleteProgram(program);
