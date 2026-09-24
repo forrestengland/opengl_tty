@@ -34,10 +34,13 @@ unsigned char* image_data = 0;
 #define WIREFRAME 0
 
 // player object file
-#define OBJFILE "cube.obj"
+//#define OBJFILE "cube.obj"
+#define OBJFILE "deer_tex.obj"
 
 // texture image for ground and player for now
 #define IMAGEFILE "cube_texture.bmp"
+//#define IMAGEFILE "deer_auv.bmp"
+
 #define GROUND_IMAGEFILE "auvBG.bmp"
 #define BACKGROUND_IMAGEFILE "bg.bmp"
 
