@@ -39,6 +39,7 @@ unsigned char* image_data = 0;
 // texture image for ground and player for now
 #define IMAGEFILE "cube_texture.bmp"
 #define GROUND_IMAGEFILE "auvBG.bmp"
+#define BACKGROUND_IMAGEFILE "bg.bmp"
 
 // pi
 #define PI 3.1415926535
@@ -49,8 +50,10 @@ unsigned char* image_data = 0;
 // stuff gl needs access to
 GLuint vertexBuffer;
 GLuint planeVertexBuffer;
+GLuint backgroundVertexBuffer;
 
 GLuint texture;
+GLuint bgTexture;
 GLuint groundTexture;
 
 GLint positionAttribute;
@@ -148,6 +151,27 @@ const char *hudFragmentShaderSource =
     "    gl_FragColor = texture2D(textureSampler, vertexTexCoord);\n"
     "}\n";
 
+const char *backgroundVertexShaderSource =
+    "attribute vec2 position;\n"
+    "attribute vec2 texCoord;\n"
+    "varying vec2 vertexTexCoord;\n"
+    "\n"
+    "void main()\n"
+    "{\n"
+    "    gl_Position = vec4(position, 0.0, 1.0);\n"
+    "    vertexTexCoord = texCoord;\n"
+    "}\n";
+
+const char *backgroundFragmentShaderSource =
+    "precision mediump float;\n"
+    "varying vec2 vertexTexCoord;\n"
+    "uniform sampler2D textureSampler;\n"
+    "\n"
+    "void main()\n"
+    "{\n"
+    "    gl_FragColor = texture2D(textureSampler, vertexTexCoord);\n"
+    "}\n";
+
 // compile a shader program
 GLuint compileShader(GLenum type, const char *source) {
 
@@ -171,6 +195,48 @@ GLuint compileShader(GLenum type, const char *source) {
   }
 
   return shader;
+}
+
+// create the hud 2d behind shader programs
+GLuint createBackgroundProgram(void)
+{
+
+  GLuint vertexShader = compileShader(GL_VERTEX_SHADER, backgroundVertexShaderSource);
+  GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, backgroundFragmentShaderSource);
+
+    if (!vertexShader || !fragmentShader)
+        return 0;
+
+    GLuint program = glCreateProgram();
+
+    glAttachShader(program, vertexShader);
+    glAttachShader(program, fragmentShader);
+
+    glBindAttribLocation(program, 0, "position");
+    glBindAttribLocation(program, 1, "texCoord");    
+
+    glLinkProgram(program);
+
+    GLint success;
+
+    glGetProgramiv(program, GL_LINK_STATUS, &success);
+
+    if (!success) {
+      
+        char log[512];
+
+        glGetProgramInfoLog(program, sizeof(log), NULL, log);
+
+        fprintf(stderr, "background program linking failed:\n%s\n", log);
+
+        glDeleteProgram(program);
+        program = 0;
+    }
+
+    glDeleteShader(vertexShader);
+    glDeleteShader(fragmentShader);
+
+    return program;
 }
 
 // create a shader program
@@ -367,6 +433,58 @@ void draw_model(Mat4 *model, Mat4 *view, Mat4 *projection, f3_obj* player_obj, G
   glDisableVertexAttribArray(1);
 }
 
+void draw_background(GLuint program)
+{
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+
+    glUseProgram(program);
+
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, bgTexture);
+
+    glUniform1i(
+        glGetUniformLocation(program, "textureSampler"),
+        0
+    );
+
+    GLint positionAttribute =
+        glGetAttribLocation(program, "position");
+
+    GLint texCoordAttribute =
+        glGetAttribLocation(program, "texCoord");
+
+    glBindBuffer(GL_ARRAY_BUFFER, backgroundVertexBuffer);
+
+    glEnableVertexAttribArray(positionAttribute);
+    glVertexAttribPointer(
+        positionAttribute,
+        2,
+        GL_FLOAT,
+        GL_FALSE,
+        4 * sizeof(float),
+        (void *)0
+    );
+
+    glEnableVertexAttribArray(texCoordAttribute);
+    glVertexAttribPointer(
+        texCoordAttribute,
+        2,
+        GL_FLOAT,
+        GL_FALSE,
+        4 * sizeof(float),
+        (void *)(2 * sizeof(float))
+    );
+
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
+    glDisableVertexAttribArray(positionAttribute);
+    glDisableVertexAttribArray(texCoordAttribute);
+
+    glDepthMask(GL_TRUE);
+    glEnable(GL_DEPTH_TEST);
+}
+
 void updateHudTexture(int fps, TTF_Font* font) {
 
   // prepare text display
@@ -421,6 +539,7 @@ int main(int argc, char* argv[]) {
 
   GLuint program;
   GLuint hudProgram;
+  GLuint backgroundProgram;
 
   player p;
   player_init(&p);
@@ -532,6 +651,20 @@ int main(int argc, char* argv[]) {
   hudTexCoordAttribute = glGetAttribLocation(hudProgram, "texCoord");  
   hudScreenSizeUniform = glGetUniformLocation(hudProgram, "screenSize");
 
+  // create background program
+  backgroundProgram = createBackgroundProgram();
+
+  if (!program) {
+    fprintf(stderr, "Failed to create shader program\n");
+
+    SDL_GL_DeleteContext(context);
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+
+    return 1;
+  }
+  
+
   // hud buffer
   glGenBuffers(1, &hudVertexBuffer);
 
@@ -571,6 +704,7 @@ int main(int argc, char* argv[]) {
 	       GL_RGB, GL_UNSIGNED_BYTE, image_data);
   stbi_image_free(image_data);
 
+  // load ground texture
   int ground_width;
   int ground_height;
   int ground_channels;
@@ -604,6 +738,40 @@ int main(int argc, char* argv[]) {
 
   stbi_image_free(ground_data);  
 
+  // load background image
+  int bg_width;
+  int bg_height;
+  int bg_channels;
+
+  unsigned char *bg_data = stbi_load(BACKGROUND_IMAGEFILE, &bg_width, &bg_height,
+					 &bg_channels, 0);
+
+  if (!bg_data) {
+    printf("error loading bg texture '%s'\n", BACKGROUND_IMAGEFILE);
+    return 1;
+  }
+
+  glGenTextures(1, &bgTexture);
+  glBindTexture(GL_TEXTURE_2D, bgTexture);
+
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+  glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+  glTexImage2D(GL_TEXTURE_2D,
+	       0,
+	       GL_RGB,
+	       bg_width,
+	       bg_height,
+	       0,
+	       GL_RGB,
+	       GL_UNSIGNED_BYTE,
+	       bg_data
+	       );
+
+  stbi_image_free(bg_data);  
+  
   // load player model .obj
   if (!f3_obj_load(&player_obj)) return 1;
   // get model vertices to send to gpu
@@ -634,10 +802,23 @@ int main(int argc, char* argv[]) {
   };
 
   glGenBuffers(1, &planeVertexBuffer);
-
   glBindBuffer(GL_ARRAY_BUFFER, planeVertexBuffer);
-
   glBufferData(GL_ARRAY_BUFFER, sizeof(plane_vertices), plane_vertices, GL_STATIC_DRAW);
+
+  // create background plane
+  float background_vertices[] = {
+    // position       texcoord
+    -1.0f, -1.0f,     0.0f, 1.0f,
+    1.0f, -1.0f,     1.0f, 1.0f,
+    1.0f,  1.0f,     1.0f, 0.0f,
+
+    -1.0f, -1.0f,     0.0f, 1.0f,
+    1.0f,  1.0f,     1.0f, 0.0f,
+    -1.0f,  1.0f,     0.0f, 0.0f
+  };  
+  glGenBuffers(1, &backgroundVertexBuffer);
+  glBindBuffer(GL_ARRAY_BUFFER, backgroundVertexBuffer);
+  glBufferData(GL_ARRAY_BUFFER, sizeof(background_vertices), background_vertices, GL_STATIC_DRAW);
 
   // get actual size of window (fullscreen if on console)
   int width;
@@ -756,6 +937,9 @@ int main(int argc, char* argv[]) {
     // Clear the frame
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    // draw the background
+    draw_background(backgroundProgram);
     
     // draw the ground
     draw_plane(&planeTranslation, &view, &projection, program);
